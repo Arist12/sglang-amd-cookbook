@@ -2,12 +2,16 @@
 
 Day-0 bring-up of `moonshotai/Kimi-K3` on 8× AMD Instinct MI355X (gfx950), TP=8,
 in both the plain and the DSpark speculative-decoding configuration. Both were
-launched, served real traffic, and swept; every number below comes from the run
-recorded in section 5.
+launched, served real traffic, swept for throughput, and evaluated on GSM8K and
+AIME25; every number below comes from the run recorded in section 7.
 
 Upstream: [sgl-project/sglang#32541](https://github.com/sgl-project/sglang/pull/32541)
 (model support) and [#32548](https://github.com/sgl-project/sglang/issues/32548)
 (the AMD Day-0 recipe this reproduces).
+
+**Headline:** the two configurations are accuracy-identical and speed-opposite.
+DSpark is 1.54× faster on greedy GSM8K and 3.45× *slower* on sampled AIME25.
+Pick per workload, not once.
 
 ## 1. The model
 
@@ -56,13 +60,16 @@ The two configs differ only by two flags:
   --speculative-algorithm DSPARK
 ```
 
-The four AITER environment variables are **mandatory on AMD, not tuning knobs**
-— see the footprint gotcha in section 4.
+Two things are mandatory rather than optional:
+
+- The four AITER environment variables — see the footprint gotcha in section 6.
+- [`dspark_rocm_renorm.patch`](dspark_rocm_renorm.patch) if you serve DSpark with
+  any non-greedy sampling — see section 5.
 
 A turnkey alternative is the published Day-0 image
 `lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727`, which takes the identical
 command and env. The numbers here were *not* measured on it; they come from the
-source build in section 5.
+source build in section 7.
 
 ## 3. Memory on a 288 GiB card
 
@@ -79,10 +86,42 @@ path, leaving ~93 GB before pools and graphs. At `--mem-fraction-static 0.85`:
 DSpark pays for the draft weights, a second CUDA-graph set, and an 8-wide verify
 window, which is where the KV pool and `max_running_requests` go.
 
-## 4. Benchmarks
+## 4. Accuracy
 
-`sglang.bench_serving`, `--dataset-name random`, ISL 1024 / OSL 1024,
-`--random-range-ratio 1`, `--num-prompts` = 2 × concurrency.
+Speculative decoding is supposed to be lossless — the target verifies every
+token — so the point of running both configs is to confirm that, and to have a
+regression check that distinguishes a broken verify path (which costs accuracy)
+from a merely inefficient one (which costs throughput).
+
+| Eval | non-spec | DSpark | verdict |
+|---|---:|---:|---|
+| GSM8K, n=1314, greedy | **97.49%** | **97.64%** | parity (2 problems apart) |
+| AIME25 pass@1 avg-of-8 | **93.33%** ±4.36% | **94.58%** ±3.05% | parity (0.7 σ) |
+
+Both AIME25 runs were clean: 240 samples each, `stop_rate` 100%, `truncated` 0%,
+`no_answer` 0%, `error` 0% at `--max-tokens 64000`.
+
+```bash
+# GSM8K — in-tree harness is fine here
+python3 -m sglang.test.run_eval --port 30000 --eval-name gsm8k \
+  --num-examples 1319 --num-threads 32 --max-tokens 8192 --temperature 0
+
+# AIME25 — sgl-eval, NOT in-tree run_eval (same answer-extraction reason as GLM-5.2)
+pip install git+https://github.com/sgl-project/sgl-eval
+sgl-eval run aime25 --base-url http://127.0.0.1:30000/v1 \
+  --model moonshotai/Kimi-K3 --api-key EMPTY \
+  --n-repeats 8 --num-threads 48 --max-tokens 64000 \
+  --temperature 1.0 --top-p 0.95 --thinking
+```
+
+Both are driven by [`eval_kimi_k3.sh`](eval_kimi_k3.sh). No `--thinking-mode` is
+needed: `--reasoning-parser kimi_k3` already puts the trace in
+`reasoning_content` and leaves `content` clean for the answer extractor.
+
+## 5. Throughput — and when DSpark is the wrong answer
+
+Synthetic sweep: `sglang.bench_serving`, `--dataset-name random`, ISL 1024 /
+OSL 1024, `--random-range-ratio 1`, `--num-prompts` = 2 × concurrency.
 
 **Non speculative-decoding**
 
@@ -100,48 +139,73 @@ window, which is where the KV pool and `max_running_requests` go.
 | 8    | 669     | 18.27   | —            | 758.03      | 94.8      | 3.26       |
 | 32   | 1073    | 40.09   | —            | 1338.66     | 167.3     | 3.26       |
 
-DSpark roughly doubles single-stream decode (51.4 → 104.0 tok/s) and cuts TTFT
-and TPOT at low and medium concurrency. It **loses** on aggregate throughput at
-concurrency 32 (1338.66 vs 1695.74 tok/s): once the batch is full the target is
-already compute-saturated and the rejected draft tokens are wasted work. That
-crossover is why this cookbook files DSpark under *low-latency* and the plain
-config under *high-throughput* — the same crossover appears in the reference
-table in #32548 (4898 vs 3715 tok/s at concurrency 32).
+The two eval runs are the same story on real traffic, and they bracket the
+effect far more sharply than the synthetic sweep does:
 
-### Open: accept length is ~3.3, upstream reports 5.75
+| Workload | non-spec | DSpark | |
+|---|---:|---:|---|
+| GSM8K, 32 threads, greedy, accept 5.95 | 605.4 s / 469 tok/s | 393.7 s / 711 tok/s | DSpark **1.54× faster** |
+| AIME25, 48 threads, temp 1.0, accept ~2.9 | 1964.1 s / 692 tok/s | 6779.7 s / 188 tok/s | DSpark **3.45× slower** |
 
-#32548 reports accept length 5.29–5.93 across concurrency 2–32 on MI355X. We
-measure 3.26–3.32, i.e. an accept rate of 0.32 rather than 0.68 against the same
-`gamma=7` / 8-wide verify window. Ruled out so far:
+The mechanism is arithmetic, not a bug. DSpark proposes 7 draft tokens and
+verifies an 8-wide window every step. At accept length `a`, each accepted token
+costs `8/a` target token-slots: 1.34 at `a=5.95`, 2.76 at `a=2.9`. When the batch
+is small the target is memory-bound and those extra slots are nearly free, so the
+step-count saving wins. When the batch is full the target is compute-bound and
+the extra slots come straight off throughput. Concurrency and accept length
+therefore have to be read together — which is why this cookbook files DSpark
+under *low-latency* and the plain config under *high-throughput*.
 
-- **Workload** — ShareGPT gives 3.28, random 1024/1024 gives 3.26. Same.
-- **Sampling** — `temperature=0` greedy gives 2.3–3.7. Same.
-- **`AITER_SITUV2_A8W4`** — disabling it gives 2.5–3.6. Same.
-- **Draft window mis-sizing** — the draft-worker verify graph captures
-  `num_tokens_per_req=7`, which is `num_draft_tokens - 1` by design in
-  `SpeculativeAlgorithm.get_num_tokens_per_req_for_target_verify`, not a bug.
-- **ROCm backend fallbacks** — all correct: draft attention overrides to triton,
-  and the `nv_cutedsl` verify backend that `kimi_k3_hook.py` pins resolves to the
-  triton KDA kernel off CUDA, with the fused DSpark CuTe path behind `is_cuda()`.
+### Accept length is a workload property, not a platform defect
 
-Output quality is unaffected (the target verifies every token), so this costs
-speed, not correctness. The most likely remaining cause is version skew against
-whatever sglang+aiter pair the Day-0 image pins; the next step is to run the same
-sweep inside `lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727` and compare.
+An earlier revision of this page filed our low accept-length readings as an
+unexplained gap against the 5.29–5.93 that #32548 reports. That was wrong, and
+the GSM8K run settles it. Measured on this node:
 
-## 5. Provenance
+| Workload | Accept length |
+|---|---:|
+| GSM8K (greedy, structured math, n=1314) | **5.95** (min 3.72, max 7.67) |
+| ShareGPT (open-ended chat) | 3.28 |
+| `bench_serving` random 1024/1024 | 3.26–3.32 |
+| AIME25 (temp 1.0, top_p 0.95, long reasoning) | 2.9–3.0 |
 
-| | |
-|---|---|
-| node | 8× AMD Instinct MI355X (gfx950), 288 GiB each, single node |
-| sglang | `DarkSharpness/sglang-kimi` @ `amd/kimi-k3` `533bff471` (= #32541 `kimi-k3` + HIP multi-stream disable), reporting `0.5.15.post1.dev20260723+g6c9fd0adc5` |
-| aiter | `k3-for-amd` `68e42f5f` |
-| ROCm | 7.2.0 |
-| torch | 2.9.1+rocm7.2.0 |
-| date | 2026-07-28 |
-| script | [`test_kimi_k3.sh`](test_kimi_k3.sh) |
+The upstream figure sits at the GSM8K-like end of that range and reproduces here
+exactly. Both content and sampling move it: predictable structured text lets the
+5-layer draft model run ahead, while open-ended prose and a temperature-1.0
+target flatten the distribution the draft is trying to guess.
 
-Not the published Day-0 image — see section 2.
+### DSpark + non-greedy sampling crashes on ROCm without the patch
+
+`build_dflash_verify_target_probs` calls `top_k_renorm_prob` /
+`top_p_renorm_prob`, which sglang imports from `sgl_kernel` only under
+`is_cuda()` or `is_musa()` and leaves as `None` everywhere else. DSpark's triton
+accept kernel reaches that helper on every device, so the first decode batch
+carrying `top_p` or `top_k` kills the scheduler:
+
+```
+File ".../speculative/dflash_utils.py", line 789, in build_dflash_verify_target_probs
+    target_probs = top_p_renorm_prob(
+TypeError: 'NoneType' object is not callable
+```
+
+Greedy traffic never touches the path, so this stays hidden until the first
+AIME-style run — GSM8K at `--temperature 0` passes happily, and then the server
+dies 30 seconds into AIME25.
+
+DFLASH escapes it because its worker gates the whole non-greedy verify on
+`is_dflash_sampling_verify_available()` and silently degrades to greedy argmax
+verification. DSPARK has no such gate, and degrading would be the wrong fix
+anyway: verifying greedily against a sampled target changes the output
+distribution. [`dspark_rocm_renorm.patch`](dspark_rocm_renorm.patch) routes the
+renorm to the torch implementations instead — `top_p_normalize_probs_torch`
+already existed in `layers/sampler.py`, and the top-k counterpart mirrors the
+keep-mask convention of `top_k_top_p_min_p_sampling_from_probs_torch` beside it.
+Both match a reference renorm to ~1e-8 and are identity at `top_p=1.0` /
+`top_k=vocab_size`.
+
+```bash
+git apply dspark_rocm_renorm.patch   # in your sglang checkout
+```
 
 ## 6. Gotchas
 
@@ -161,13 +225,39 @@ Not the published Day-0 image — see section 2.
 - **`--attention-backend triton`** is the recipe's choice for the 24 full-MLA
   layers; the 69 KDA layers pick their own kernels and default to the triton
   packed decode on this path.
+- **The draft verify window is not mis-sized.** The draft-worker graph captures
+  `num_tokens_per_req=7` while the runner reports `verify_num_draft_tokens=8`;
+  `get_num_tokens_per_req_for_target_verify` returns `num_draft_tokens - 1` for
+  the DSpark draft worker by design.
+- **ROCm backend fallbacks are otherwise correct and silent.**
+  `is_sm100_supported()` is false, so the `trtllm_mha` draft default never
+  applies (it overrides to triton), and the `nv_cutedsl` verify backend that
+  `kimi_k3_hook.py` pins unconditionally resolves to the triton KDA kernel off
+  CUDA, with the fused DSpark CuTe MTP path gated behind `is_cuda()`.
 - **DSpark cuts `max_running_requests` to 48** (from 368). If you need more
-  concurrent streams than that, serve the non-spec config — which, per the table
-  above, is also the faster one in aggregate past ~concurrency 32.
+  concurrent streams than that, serve the non-spec config — which, per section 5,
+  is also the faster one under exactly those conditions.
 - **Multimodal is present but untested here.** `KimiK3ForConditionalGeneration`
-  carries a vision tower; every number in this playbook is text-only.
+  carries a vision tower; every number in this playbook is text-only. The
+  checkpoint also ships `.eval_results/` claiming GPQA-diamond 93.5 and HLE 56.0,
+  neither of which is reproduced here yet.
 
-## 7. Teardown
+## 7. Provenance
+
+| | |
+|---|---|
+| node | 8× AMD Instinct MI355X (gfx950), 288 GiB each, single node |
+| sglang | `DarkSharpness/sglang-kimi` @ `amd/kimi-k3` `533bff471` (= #32541 `kimi-k3` + HIP multi-stream disable) + [`dspark_rocm_renorm.patch`](dspark_rocm_renorm.patch), reporting `0.5.15.post1.dev20260723+g6c9fd0adc5` |
+| aiter | `k3-for-amd` `68e42f5f` |
+| ROCm | 7.2.0 |
+| torch | 2.9.1+rocm7.2.0 |
+| date | 2026-07-28 |
+| script | [`test_kimi_k3.sh`](test_kimi_k3.sh) |
+
+Not the published Day-0 image — see section 2. The GSM8K numbers predate the
+patch (greedy, so unaffected); the AIME25 numbers require it.
+
+## 8. Teardown
 
 ```bash
 pkill -f 'sglang serve'

@@ -964,7 +964,7 @@ window.MODELS = [
     "bytes_per_param": 1.31,
     "weights_gb": 1561,
     "context_len": "1048576",
-    "summary": "Day-0 bring-up of moonshotai/Kimi-K3 (2.78T total / 105.4B active, hybrid KDA + MLA, 896 routed experts) on 8x MI355X at TP=8, in both the plain and the DSpark speculative-decoding configuration from sgl-project/sglang#32548. Both launched, served and swept unmodified - no source patches were needed. The 1.56 TB checkpoint lands at 194.38 GB/GPU under the aiter MXFP4 path, leaving a 21.35 GB KV pool (829,332 tokens, 368 concurrent requests) at --mem-fraction-static 0.85; DSpark trades that down to 14.02 GB / 48 requests for the draft model. DSpark doubles single-stream decode (51.40 -> 104.00 tok/s) and wins TTFT/TPOT up to ~concurrency 8, then loses aggregate throughput to the plain config at concurrency 32 (1338.66 vs 1695.74 tok/s) - hence the two cells. One open gap: accept length measures 3.26-3.32 against the 5.29-5.93 reported upstream, with workload, sampling temperature and AITER_SITUV2_A8W4 all ruled out as causes.",
+    "summary": "Day-0 bring-up of moonshotai/Kimi-K3 (2.78T total / 105.4B active, hybrid KDA + MLA, 896 routed experts) on 8x MI355X at TP=8, in both the plain and the DSpark speculative-decoding configuration from sgl-project/sglang#32548. Accuracy is at parity between the two and healthy in absolute terms: GSM8K 97.49% / 97.64%, AIME25 pass@1 avg-of-8 93.33% / 94.58% - speculative decoding is lossless, as it should be. Throughput is where they differ, and the direction flips: DSpark is 1.54x faster on greedy GSM8K (accept length 5.95) and doubles single-stream decode (51.40 -> 104.00 tok/s), but 3.45x SLOWER on sampled AIME25 at 48 concurrent (accept length ~2.9), where its 8-wide verify window costs 2.76 target token-slots per accepted token against a compute-bound batch. The 1.56 TB checkpoint lands at 194.38 GB/GPU under the aiter MXFP4 path (which is mandatory, not a tuning knob). Serving DSpark with any non-greedy sampling needs dspark_rocm_renorm.patch, without which the first top_p batch takes the scheduler down on ROCm.",
     "configs": [
       {
         "gfx": "gfx950",
@@ -1024,7 +1024,20 @@ window.MODELS = [
             "why": "Serve the 1.56 TB checkpoint from the local HF cache; avoids a gated-repo revalidation stalling boot."
           }
         ],
-        "accuracy": [],
+        "accuracy": [
+          {
+            "name": "GSM8K",
+            "value": "97.64%",
+            "note": "n=1314, in-tree run_eval --eval-name gsm8k --max-tokens 8192 --temperature 0 --num-threads 32. Wall clock 393.7 s at 711.2 tok/s. Mean speculative accept length over the run 5.95 (min 3.72, max 7.67).",
+            "ref": "97.49% on the same server without DSpark - parity, i.e. speculative decoding is lossless here"
+          },
+          {
+            "name": "AIME25",
+            "value": "94.58%",
+            "note": "pass@1 avg-of-8 via sgl-eval, +/-3.05% (SEM 1.08%), 240 samples; stop_rate 100%, truncated 0%, no_answer 0%, error 0%. Run with --n-repeats 8 --num-threads 48 --max-tokens 64000 --temperature 1.0 --top-p 0.95 --thinking. Wall clock 6779.7 s at 188 tok/s. Requires dspark_rocm_renorm.patch - without it the top_p path takes the server down.",
+            "ref": "93.33% +/-4.36% without DSpark - the 1.25 pp gap is 0.7 sigma of the difference, i.e. parity"
+          }
+        ],
         "benchmarks": [
           {
             "isl": 1024,
@@ -1060,21 +1073,24 @@ window.MODELS = [
         ],
         "vs_nvidia": [],
         "gotchas": [
-          "DSpark doubles single-stream decode (51.40 -> 104.00 tok/s) but LOSES on aggregate throughput past ~concurrency 32 (1338.66 vs 1695.74 tok/s): with a full batch the target is already compute-saturated and rejected draft tokens are wasted work. Serve the high-throughput config there. The same crossover appears in #32548 (3715 vs 4898 tok/s at concurrency 32).",
-          "OPEN: accept length measures 3.26-3.32 here vs the 5.29-5.93 reported in #32548 - accept rate 0.32 instead of 0.68 against the same gamma=7 / 8-wide verify window. Ruled out: workload (ShareGPT 3.28 vs random 3.26), sampling (greedy 2.3-3.7), AITER_SITUV2_A8W4 (2.5-3.6 with it off). Output quality is unaffected because the target verifies every token, so this costs speed, not correctness. Prime suspect is version skew against whatever sglang+aiter pair the Day-0 image pins.",
+          "Whether DSpark helps or hurts flips with accept length x concurrency, and the eval runs make the size of it concrete. GSM8K (greedy, 32 threads, accept 5.95): 393.7 s / 711 tok/s with DSpark vs 605.4 s / 469 tok/s without - 1.54x faster. AIME25 (temperature 1.0, 48 threads, accept ~2.9): 6779.7 s / 188 tok/s with DSpark vs 1964.1 s / 692 tok/s without - 3.45x SLOWER. At 8 draft tokens per step and accept 2.9, each accepted token costs 2.76 target token-slots; with a full batch the target is compute-bound, so that overhead lands directly on throughput.",
+          "DSpark + any non-greedy sampling killed the scheduler on ROCm before dspark_rocm_renorm.patch: build_dflash_verify_target_probs calls top_k_renorm_prob / top_p_renorm_prob, which sglang imports from sgl_kernel only under is_cuda() or is_musa() and leaves as None elsewhere, so the first decode batch carrying top_p or top_k dies with \"TypeError: 'NoneType' object is not callable\". Greedy traffic (GSM8K) never touches it, so this hides until an AIME-style run. DFLASH escapes because its worker gates non-greedy verify on is_dflash_sampling_verify_available() and degrades to greedy argmax; DSPARK has no such gate. The patch routes the renorm to the torch implementations instead of degrading, which keeps sampling semantics intact.",
+          "DSpark accept length is a property of the workload, not of the platform. Measured on this node: 5.95 mean over 1314 GSM8K requests (greedy, structured math; min 3.72 max 7.67), 3.26-3.32 on bench_serving random 1024/1024, 3.28 on ShareGPT, and 2.9-3.0 during AIME25 (temperature 1.0, top_p 0.95, long open-ended reasoning). The 5.29-5.93 quoted in #32548 sits at the GSM8K-like end of that range and reproduces here - an earlier revision of this page wrongly filed the low random/ShareGPT numbers as an unexplained platform gap.",
+          "Accuracy is unchanged by speculative decoding, as it should be - the target verifies every token. GSM8K 97.64% vs 97.49%, AIME25 94.58% vs 93.33%, both within noise of the non-spec cell. Use that as the regression check when changing anything in the DSpark path: a real accept-length or verify bug shows up as lost throughput, not as lost accuracy.",
           "The draft-worker verify CUDA graph captures num_tokens_per_req=7 while the runner reports verify_num_draft_tokens=8. That is by design - SpeculativeAlgorithm.get_num_tokens_per_req_for_target_verify returns num_draft_tokens - 1 for the DSpark draft worker - not a mis-sized window.",
-          "ROCm backend fallbacks are all correct and silent: is_sm100_supported() is false so the trtllm_mha draft default never applies (it overrides to triton), and the nv_cutedsl verify backend that kimi_k3_hook.py pins unconditionally resolves to the triton KDA kernel off CUDA, with the fused DSpark CuTe MTP path gated behind is_cuda().",
+          "ROCm backend fallbacks are otherwise correct and silent: is_sm100_supported() is false so the trtllm_mha draft default never applies (it overrides to triton), and the nv_cutedsl verify backend that kimi_k3_hook.py pins unconditionally resolves to the triton KDA kernel off CUDA, with the fused DSpark CuTe MTP path gated behind is_cuda().",
           "DSpark cuts max_running_requests to 48 (from 368) and the KV pool to 14.02 GB / 544,533 tokens, paying for draft weights, a second CUDA-graph set and the 8-wide verify window.",
           "The four AITER env vars are load-bearing, not tuning knobs. Without them the routed experts unpack from MXFP4 and target weights go 194.38 -> 249.29 GB/GPU; the server then dies in _profile_available_bytes with 'Loaded weights leave no GPU memory for the KV cache' at --mem-fraction-static 0.85 AND 0.93 alike. No mem-fraction rescues it on a 288 GiB card.",
           "First weight load is disk-bound: ~16 min cold (96 shards, ~25 s/shard). With the page cache warm the same load takes 105 s and the whole boot is ~3 min - budget the first launch, then stop worrying about restarts.",
           "--reasoning-parser kimi_k3 --tool-call-parser kimi_k3 split the reasoning trace into reasoning_content. Without them a short --max-tokens looks like it returns an empty answer, because the budget is spent inside the reasoning block.",
           "Effective weight precision for the roofline is 1.31 bytes/param, not 0.5: MXFP4 covers only the routed-expert Linears, and the ignore list keeps self_attn, shared_experts, the dense MLP, lm_head, vision_tower and mm_projector in bf16. Those bf16 tensors dominate the *active* set (114.4 of 137.8 GB per decode step) even though MXFP4 dominates the *total*.",
+          "AIME25 needs sgl-eval, not in-tree run_eval, for the same answer-extraction reason as GLM-5.2. Both K3 configs answered every one of the 240 samples with a proper stop (stop_rate 100%, truncated 0%, no_answer 0%) at --max-tokens 64000.",
           "KimiK3ForConditionalGeneration carries a vision tower, but every number here is text-only; multimodal is untested on this hardware."
         ],
         "provenance": {
           "image": "source build in a ROCm 7.2.0 container - NOT the published Day-0 image lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 (that image takes the identical command and env, but was not what these numbers were measured on)",
           "pr": "sgl-project/sglang#32541 (Kimi-K3 support); #32548 (AMD Day-0 recipe)",
-          "sglang": "DarkSharpness/sglang-kimi @ amd/kimi-k3 533bff471 (= #32541 kimi-k3 + HIP multi-stream disable), reports 0.5.15.post1.dev20260723+g6c9fd0adc5",
+          "sglang": "DarkSharpness/sglang-kimi @ amd/kimi-k3 533bff471 + dspark_rocm_renorm.patch, reports 0.5.15.post1.dev20260723+g6c9fd0adc5",
           "aiter": "k3-for-amd 68e42f5f",
           "rocm": "7.2.0 (torch 2.9.1+rocm7.2.0)",
           "date": "2026-07-28",
@@ -1139,7 +1155,20 @@ window.MODELS = [
             "why": "Serve the 1.56 TB checkpoint from the local HF cache; avoids a gated-repo revalidation stalling boot."
           }
         ],
-        "accuracy": [],
+        "accuracy": [
+          {
+            "name": "GSM8K",
+            "value": "97.49%",
+            "note": "n=1314, in-tree run_eval --eval-name gsm8k --max-tokens 8192 --temperature 0 --num-threads 32. Wall clock 605.4 s at 468.8 tok/s.",
+            "ref": "97.64% with DSpark on the same server - parity"
+          },
+          {
+            "name": "AIME25",
+            "value": "93.33%",
+            "note": "pass@1 avg-of-8 via sgl-eval, +/-4.36% (SEM 1.54%), 240 samples; stop_rate 100%, truncated 0%, no_answer 0%, error 0%. Same flags as the DSpark cell. Wall clock 1964.1 s at 692 tok/s - 3.45x faster than the DSpark cell on this workload.",
+            "ref": "94.58% +/-3.05% with DSpark - parity within 0.7 sigma"
+          }
+        ],
         "benchmarks": [
           {
             "isl": 1024,
@@ -1175,17 +1204,19 @@ window.MODELS = [
         ],
         "vs_nvidia": [],
         "gotchas": [
-          "This config wins on aggregate throughput past ~concurrency 32 (1695.74 vs DSpark's 1338.66 tok/s) and keeps max_running_requests at 368 with a 21.35 GB / 829,332-token KV pool. Below that, DSpark is the better latency answer - see the low-latency cell.",
+          "This is the throughput answer whenever the batch is full or the traffic is sampled rather than greedy: 1695.74 vs DSpark's 1338.66 tok/s at concurrency 32 on the synthetic sweep, and 3.45x faster wall clock on the real AIME25 run (1964.1 s / 692 tok/s vs 6779.7 s / 188 tok/s). It also keeps max_running_requests at 368 with a 21.35 GB / 829,332-token KV pool. Below ~concurrency 8, or on greedy structured workloads like GSM8K, DSpark wins instead - see the low-latency cell.",
+          "Accuracy matches the DSpark cell (GSM8K 97.49% vs 97.64%, AIME25 93.33% vs 94.58%, both within noise), so the choice between the two cells is purely a throughput/latency one.",
           "The four AITER env vars are load-bearing, not tuning knobs. Without them the routed experts unpack from MXFP4 and target weights go 194.38 -> 249.29 GB/GPU; the server then dies in _profile_available_bytes with 'Loaded weights leave no GPU memory for the KV cache' at --mem-fraction-static 0.85 AND 0.93 alike. No mem-fraction rescues it on a 288 GiB card.",
           "First weight load is disk-bound: ~16 min cold (96 shards, ~25 s/shard). With the page cache warm the same load takes 105 s and the whole boot is ~3 min - budget the first launch, then stop worrying about restarts.",
           "--reasoning-parser kimi_k3 --tool-call-parser kimi_k3 split the reasoning trace into reasoning_content. Without them a short --max-tokens looks like it returns an empty answer, because the budget is spent inside the reasoning block.",
           "Effective weight precision for the roofline is 1.31 bytes/param, not 0.5: MXFP4 covers only the routed-expert Linears, and the ignore list keeps self_attn, shared_experts, the dense MLP, lm_head, vision_tower and mm_projector in bf16. Those bf16 tensors dominate the *active* set (114.4 of 137.8 GB per decode step) even though MXFP4 dominates the *total*.",
+          "AIME25 needs sgl-eval, not in-tree run_eval, for the same answer-extraction reason as GLM-5.2. Both K3 configs answered every one of the 240 samples with a proper stop (stop_rate 100%, truncated 0%, no_answer 0%) at --max-tokens 64000.",
           "KimiK3ForConditionalGeneration carries a vision tower, but every number here is text-only; multimodal is untested on this hardware."
         ],
         "provenance": {
           "image": "source build in a ROCm 7.2.0 container - NOT the published Day-0 image lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 (that image takes the identical command and env, but was not what these numbers were measured on)",
           "pr": "sgl-project/sglang#32541 (Kimi-K3 support); #32548 (AMD Day-0 recipe)",
-          "sglang": "DarkSharpness/sglang-kimi @ amd/kimi-k3 533bff471 (= #32541 kimi-k3 + HIP multi-stream disable), reports 0.5.15.post1.dev20260723+g6c9fd0adc5",
+          "sglang": "DarkSharpness/sglang-kimi @ amd/kimi-k3 533bff471 + dspark_rocm_renorm.patch, reports 0.5.15.post1.dev20260723+g6c9fd0adc5",
           "aiter": "k3-for-amd 68e42f5f",
           "rocm": "7.2.0 (torch 2.9.1+rocm7.2.0)",
           "date": "2026-07-28",
@@ -1195,22 +1226,22 @@ window.MODELS = [
     ],
     "gaps": [
       {
-        "title": "Accuracy (GSM8K / AIME25)",
-        "kind": "metric",
-        "note": "Functional correctness spot-checked only (arithmetic, factual recall, reasoning/content split). No eval harness run yet.",
-        "cmd": "# GSM8K (chat + thinking)\npython3 -m sglang.test.run_eval --port 30000 --eval-name gsm8k \\\n  --max-tokens 8192 --temperature 0 --num-examples 1319\n\n# AIME25 - use sgl-eval (NV official harness), NOT in-tree run_eval\npip install git+https://github.com/sgl-project/sgl-eval\nsgl-eval run aime25 --api-key EMPTY --base-url http://localhost:30000/v1 \\\n  --n-repeats 16 --max-tokens 64000 --temperature 1.0 --top-p 0.95 --thinking"
-      },
-      {
-        "title": "Accept-length gap vs #32548 (3.3 vs 5.75)",
-        "kind": "metric",
-        "note": "Workload, sampling temperature and AITER_SITUV2_A8W4 are ruled out; version skew against the Day-0 image is the prime suspect. Re-run the same sweep inside the published image and compare.",
-        "cmd": "docker run -d --name k3-day0 \\\n  --device=/dev/kfd --device=/dev/dri --network=host --ipc=host \\\n  --group-add video --cap-add SYS_PTRACE --shm-size=32g \\\n  -v $HOME/hf-cache:/hf-cache -e HF_HOME=/hf-cache \\\n  lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 sleep infinity\ndocker exec k3-day0 bash /workspace/test_kimi_k3.sh dspark\n\n# then, against the running server:\npython3 -m sglang.bench_serving --backend sglang-oai-chat \\\n  --model moonshotai/Kimi-K3 --dataset-name random \\\n  --random-input-len 1024 --random-output-len 1024 --random-range-ratio 1 \\\n  --num-prompts 16 --max-concurrency 8 --port 30000   # compare 'Accept length'"
-      },
-      {
         "title": "Long context (up to 1M) and multimodal",
         "kind": "metric",
         "note": "Only ISL 1024 measured, text-only. The model advertises a 1,048,576-token window and ships a vision tower.",
         "cmd": "for IN in 8192 32768 131072; do\n  python3 -m sglang.bench_serving --backend sglang-oai-chat \\\n    --model moonshotai/Kimi-K3 --dataset-name random \\\n    --random-input-len $IN --random-output-len 512 --random-range-ratio 1 \\\n    --num-prompts 2 --max-concurrency 1 --port 30000\ndone"
+      },
+      {
+        "title": "GPQA-diamond / HLE vs the model card",
+        "kind": "metric",
+        "note": "The checkpoint ships .eval_results/ claiming GPQA-diamond 93.5 and HLE 56.0. Neither is reproduced here; GPQA is cheap enough to be the next one to close.",
+        "cmd": "sgl-eval run gpqa --base-url http://127.0.0.1:30000/v1 \\\n  --model moonshotai/Kimi-K3 --api-key EMPTY \\\n  --n-repeats 4 --num-threads 48 --max-tokens 64000 \\\n  --temperature 1.0 --top-p 0.95 --thinking"
+      },
+      {
+        "title": "Day-0 image cross-check",
+        "kind": "strategy",
+        "note": "All numbers come from a source build. Re-running the same sweep inside lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 would confirm the published image behaves identically - and whether it already carries the DSpark ROCm renorm fix.",
+        "cmd": "docker run -d --name k3-day0 \\\n  --device=/dev/kfd --device=/dev/dri --network=host --ipc=host \\\n  --group-add video --cap-add SYS_PTRACE --shm-size=32g \\\n  -v $HOME/hf-cache:/hf-cache -e HF_HOME=/hf-cache \\\n  lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 sleep infinity\n\n# does the image still crash on non-greedy DSpark?\ndocker exec k3-day0 curl -s localhost:30000/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"model\":\"moonshotai/Kimi-K3\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"temperature\":1.0,\"top_p\":0.95}'"
       },
       {
         "title": "MI300X (gfx942)",
