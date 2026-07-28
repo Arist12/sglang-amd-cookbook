@@ -582,7 +582,7 @@ window.MODELS = [
         "attention_backend": "compressed (torch FlashMLA reference, SGLANG_HACK_FLASHMLA_BACKEND=torch)",
         "moe_backend": "Triton FP8 (SGLANG_FORCE_TRITON_MOE_FP8=1)",
         "docker_image": "sglang-dsv4-mi355x:flash-r1",
-        "launch_python": "python3 -m sglang.launch_server \\\n    --model-path /hf-cache/models--sgl-project--DeepSeek-V4-Flash-FP8/snapshots/ae01d80c06cdfe30581edfd0e1c5449dc7ed7f17 \\\n    --served-model-name dsv4-flash \\\n    --trust-remote-code \\\n    --tp 8 --dp 8 --enable-dp-attention \\\n    --disable-radix-cache --attention-backend compressed \\\n    --max-running-request 256 --page-size 256 --chunked-prefill-size 8192 \\\n    --kv-cache-dtype auto \\\n    --host 0.0.0.0 --port 31000 \\\n    --disable-shared-experts-fusion --disable-cuda-graph \\\n    --tool-call-parser deepseekv4 --reasoning-parser deepseek-v4",
+        "launch_python": "python3 -m sglang.launch_server \\\n    --model-path /hf-cache/models--sgl-project--DeepSeek-V4-Flash-FP8/snapshots/ae01d80c06cdfe30581edfd0e1c5449dc7ed7f17 \\\n    --served-model-name dsv4-flash \\\n    --trust-remote-code \\\n    --tp 8 --dp 8 --enable-dp-attention \\\n    --disable-radix-cache --attention-backend compressed \\\n    --max-running-requests 256 --page-size 256 --chunked-prefill-size 8192 \\\n    --kv-cache-dtype auto \\\n    --host 0.0.0.0 --port 31000 \\\n    --disable-shared-experts-fusion --disable-cuda-graph \\\n    --tool-call-parser deepseekv4 --reasoning-parser deepseek-v4",
         "aiter": {
           "enabled": true,
           "commit": null,

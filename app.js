@@ -51,7 +51,20 @@
     "--context-length": "Override the served maximum context length.",
     "--max-total-tokens": "Hard cap on total tokens across the running batch.",
     "--host": "Bind address for the server.",
-    "--port": "Bind port for the server."
+    "--port": "Bind port for the server.",
+    "--tensor-parallel-size": "Tensor-parallel degree — long form of --tp.",
+    "--dtype": "Compute dtype for the unquantized tensors (quantized weights keep their own scheme).",
+    "--page-size": "Tokens per KV-cache page — larger pages cut index overhead, waste more on short sequences.",
+    "--cuda-graph-max-bs-decode": "Largest decode batch size captured into a HIP/CUDA graph.",
+    "--max-mamba-cache-size": "Slots in the linear-attention (Mamba/GDN/KDA) state pool — the second, fixed-size memory pool hybrid models need.",
+    "--disable-shared-experts-fusion": "Keep MoE shared experts as separate GEMMs instead of fusing them into the routed path.",
+    "--nsa-prefill-backend": "Native Sparse Attention prefill backend (deprecated alias of --dsa-prefill-backend).",
+    "--nsa-decode-backend": "Native Sparse Attention decode backend (deprecated alias of --dsa-decode-backend).",
+    "--speculative-algorithm": "Speculative decoding algorithm (EAGLE, EAGLE3, NEXTN, NGRAM, DFLASH, DSPARK …).",
+    "--speculative-draft-model-path": "Draft model the speculative algorithm proposes with.",
+    "--speculative-num-draft-tokens": "Draft tokens proposed per step; the target verifies this many at once.",
+    "--skip-server-warmup": "Skip the warmup forward pass at startup.",
+    "--dist-timeout": "Seconds before a distributed collective is considered hung."
   };
 
   // ---------------------------------------------------------------- helpers
@@ -112,13 +125,14 @@
     }).join("\n");
   }
 
+  // Anchor on the first long flag rather than on a program name: recipes are
+  // written against both `python3 -m sglang.launch_server` and the newer
+  // `sglang serve`, and env-var exports may precede either.
   function parseFlags(cmd) {
     var clean = cmd.replace(/\\\s*\n/g, " ").replace(/#[^\n]*/g, " ");
     var toks = clean.split(/\s+/).filter(Boolean);
     var out = [], i = 0;
-    // skip up to launch_server / module
-    while (i < toks.length && !/launch_server/.test(toks[i])) i++;
-    i++;
+    while (i < toks.length && toks[i].indexOf("--") !== 0) i++;
     for (; i < toks.length; i++) {
       var t = toks[i];
       if (t.indexOf("--") === 0) {
@@ -180,6 +194,71 @@
     return (v[0] || (model.configs || [])[0]);
   }
 
+  // ---------------------------------------------------------------- at a glance
+  // The per-model cards answer "how do I run this one". This answers the
+  // question they can't: which model/config to reach for, and what it costs.
+  function peakTotal(cfg) {
+    var best = null;
+    (cfg.benchmarks || []).forEach(function (b) {
+      if (b.total_tok_s != null && (!best || b.total_tok_s > best.v)) {
+        best = { v: b.total_tok_s, conc: b.concurrency };
+      }
+    });
+    return best;
+  }
+  function accValue(cfg, name) {
+    var hit = (cfg.accuracy || []).filter(function (a) { return a.name === name; })[0];
+    return hit ? hit.value : null;
+  }
+  function renderCompare() {
+    var host = byId("compare-body");
+    if (!host) return;
+    var rows = [];
+    MODELS.forEach(function (m) {
+      (m.configs || []).forEach(function (c) {
+        if (!c.verified) return;
+        rows.push({ m: m, c: c, dec: bestDecode(c), peak: peakTotal(c),
+                    gsm: accValue(c, "GSM8K"), aime: accValue(c, "AIME25") });
+      });
+    });
+    if (!rows.length) { host.innerHTML = ""; return; }
+    var body = rows.map(function (r) {
+      var peak = r.peak
+        ? fmt(r.peak.v, 0) + (r.peak.conc ? ' <small>@c' + r.peak.conc + "</small>" : "")
+        : "—";
+      return '<tr tabindex="0" role="button" data-model="' + esc(r.m.id) + '" data-gfx="' +
+        esc(r.c.gfx) + '" data-strat="' + esc(r.c.strategy) + '">' +
+        "<td class='cmp-model'>" + esc(r.m.name) + "</td>" +
+        "<td>" + esc(r.c.hw_name) + " <small>" + esc(r.c.gfx) + "</small></td>" +
+        "<td><span class='cmp-strat'>" + esc(r.c.strategy) + "</span></td>" +
+        "<td>" + esc(r.m.params_active || "—") + " <small>active</small></td>" +
+        "<td class='hl'>" + (r.dec == null ? "—" : fmt(r.dec, 0)) + "</td>" +
+        "<td>" + peak + "</td>" +
+        "<td>" + (r.gsm ? esc(r.gsm) : "—") + "</td>" +
+        "<td>" + (r.aime ? esc(r.aime) : "—") + "</td></tr>";
+    }).join("");
+    host.innerHTML =
+      '<div class="dtable-scroll"><table class="dtable cmp"><thead><tr>' +
+      "<th>model</th><th>target</th><th>strategy</th><th>params</th>" +
+      "<th>BS=1 decode<br><small>tok/s</small></th><th>peak total<br><small>tok/s</small></th>" +
+      "<th>GSM8K</th><th>AIME25</th>" +
+      "</tr></thead><tbody>" + body + "</tbody></table>" +
+      "<caption>Every verified cell on this site, one row each. BS=1 decode is the single-stream floor; " +
+      "peak total is the best aggregate throughput measured, at the concurrency noted. Blank accuracy " +
+      "cells are not-yet-run, never failures. Click a row to open its recipe.</caption></div>";
+    host.querySelectorAll("tbody tr").forEach(function (tr) {
+      var go = function () {
+        selectModel(tr.dataset.model, { gfx: tr.dataset.gfx, strategy: tr.dataset.strat });
+        var t = byId("models");
+        if (t) t.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+      };
+      tr.addEventListener("click", go);
+      tr.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); }
+      });
+    });
+  }
+
   // ---------------------------------------------------------------- coverage matrix
   function renderMatrix(model) {
     var host = byId("matrixwrap");
@@ -212,23 +291,49 @@
     });
   }
 
+  // ---------------------------------------------------------------- deep links
+  // #m=<model> selects a model; #m=<model>&c=<gfx>:<strategy> selects one cell.
+  // Models whose cells disagree (Kimi-K3's DSpark vs plain) are only shareable
+  // with the cell part, so every cell click writes it back.
+  function syncHash() {
+    var h = "#m=" + state.modelId;
+    if (state.gfx && state.strategy) h += "&c=" + state.gfx + ":" + state.strategy;
+    try { history.replaceState(null, "", h); } catch (e) {}
+  }
+  function parseHash() {
+    var raw = location.hash.replace(/^#/, "");
+    if (!raw) return {};
+    var out = {};
+    raw.split("&").forEach(function (part) {
+      var kv = part.split("=");
+      if (kv[0] === "m") out.model = decodeURIComponent(kv[1] || "");
+      if (kv[0] === "c") {
+        var cell = decodeURIComponent(kv[1] || "").split(":");
+        out.gfx = cell[0]; out.strategy = cell[1];
+      }
+    });
+    return out;
+  }
+
   // ---------------------------------------------------------------- recipe card
-  function selectModel(id) {
+  function selectModel(id, cell) {
     state.modelId = id;
-    try { history.replaceState(null, "", "#m=" + id); } catch (e) {}
     var model = MODELS.filter(function (m) { return m.id === id; })[0];
     document.querySelectorAll(".mtab").forEach(function (t) {
       t.setAttribute("aria-selected", String(t.dataset.model === id));
     });
-    var fv = firstVerified(model);
-    state.gfx = fv ? fv.gfx : GFXES[0];
-    state.strategy = fv ? fv.strategy : STRATS[0];
+    var want = cell && cell.gfx ? configFor(model, cell.gfx, cell.strategy) : null;
+    var pick = want || firstVerified(model);
+    state.gfx = pick ? pick.gfx : (cell && cell.gfx) || GFXES[0];
+    state.strategy = pick ? pick.strategy : (cell && cell.strategy) || STRATS[0];
+    syncHash();
     renderMatrix(model);
-    renderRecipe(model, fv);
+    renderRecipe(model, pick);
   }
 
   function selectConfig(model, gfx, strat) {
     state.gfx = gfx; state.strategy = strat;
+    syncHash();
     renderMatrix(model);
     renderRecipe(model, configFor(model, gfx, strat));
     var r = byId("recipe");
@@ -317,7 +422,10 @@
   }
 
   function commandBlock(cfg) {
-    var tag = "python · sglang.launch_server";
+    var cmd = cfg.launch_python || "";
+    var tag = /\bsglang\s+serve\b/.test(cmd) ? "bash · sglang serve"
+      : /launch_server/.test(cmd) ? "python · sglang.launch_server"
+      : "bash";
     return '<div class="block"><h3>Launch command <span class="hint">verified, copy-paste ready</span></h3>' +
       '<div class="cmd" data-cmd><div class="cmd-bar"><span class="tag">' + esc(tag) + "</span>" +
       '<button class="copy-btn" data-copy>Copy</button></div>' +
@@ -406,7 +514,7 @@
       '<div class="dtable-scroll"><table class="dtable"><thead><tr>' +
       "<th>hardware</th><th>strategy</th><th>conc</th><th>TTFT ms</th><th>TPOT ms</th><th>tok/s/GPU</th>" +
       "</tr></thead><tbody>" + rows + "</tbody></table>" +
-      "<caption>AMD rows measured here; NVIDIA rows from the SGLang cookbook. NV configs often include MTP/spec-decode that AMD does not yet enable.</caption></div></div>";
+      "<caption>AMD rows measured here; NVIDIA rows from the SGLang cookbook. Check the speculative-decoding note per row before reading these as apples-to-apples.</caption></div></div>";
   }
 
   function accBlock(acc) {
@@ -533,12 +641,14 @@
     }
     renderHW();
     renderTabs();
+    renderCompare();
     renderRefs();
     renderRoadmap();
     wireCopy(document);          // prerequisite command blocks
-    var deep = (location.hash.match(/^#m=(.+)$/) || [])[1];
-    var startId = (deep && MODELS.some(function (m) { return m.id === deep; })) ? deep : MODELS[0].id;
-    selectModel(startId);
+    var deep = parseHash();
+    var startId = (deep.model && MODELS.some(function (m) { return m.id === deep.model; }))
+      ? deep.model : MODELS[0].id;
+    selectModel(startId, deep);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();

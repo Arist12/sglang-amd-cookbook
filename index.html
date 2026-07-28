@@ -22,6 +22,7 @@
       <span class="sub">serving datasheet</span>
     </div>
     <nav class="topnav" aria-label="Sections">
+      <a href="#glance">At a glance</a>
       <a href="#models">Recipes</a>
       <a href="#roadmap">Roadmap</a>
       <a href="#deploy">Deploy</a>
@@ -37,10 +38,10 @@
   <div class="grid-bg" aria-hidden="true"></div>
   <div class="wrap">
     <div class="partline">
-      <span><b>SGLANG</b> 0.5.8 – 0.5.13</span>
+      <span><b>SGLANG</b> 0.5.8 – 0.5.15</span>
       <span><b>ROCm</b> 7.0 – 7.2</span>
       <span><b>TARGETS</b> gfx942 · gfx950</span>
-      <span class="rev"><b>REV</b> 2026.06</span>
+      <span class="rev"><b>REV</b> 2026.07</span>
     </div>
     <h1>Serving frontier MoE on <span class="accent">AMD&nbsp;Instinct</span>.</h1>
     <p class="thesis">
@@ -53,6 +54,21 @@
 </div>
 
 <main>
+<!-- ───────────────────────────── at a glance ───────────────────────────── -->
+<section id="glance" aria-labelledby="glance-h">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">00 · at a glance</span>
+      <h2 id="glance-h">Every verified cell, side by side</h2>
+    </div>
+    <p class="sec-note" style="margin-bottom:22px">
+      The cards below tell you how to run one model. This tells you which one to reach for — and
+      where a config that wins on latency loses on throughput.
+    </p>
+    <div id="compare-body"><!-- app.js --></div>
+  </div>
+</section>
+
 <!-- ───────────────────────────── recipes ───────────────────────────── -->
 <section id="models" aria-labelledby="models-h">
   <div class="wrap">
@@ -153,6 +169,10 @@ cat /proc/sys/kernel/numa_balancing   # expect: 0</code></pre>
         <h3>Roofline</h3>
         <p class="sec-note">Decode ceiling = aggregate HBM bandwidth ÷ active-parameter bytes (memory-bound, BS=1). The gauge shows measured ÷ ceiling. See <a href="#method-detail">the full formula</a>.</p>
       </div>
+      <div class="refcol">
+        <h3>Accuracy</h3>
+        <p class="sec-note">GSM8K through in-tree <code class="mono">sglang.test.run_eval</code> at <code class="mono">--temperature 0</code>. AIME25 through <a href="https://github.com/sgl-project/sgl-eval">sgl-eval</a>, <b>not</b> in-tree — its strict <code class="mono">Answer:</code> first-match regex under-reports reasoning models badly (62.5% vs 90.6% on the same GLM-5.2 server). Reported as pass@1 averaged over repeats, with the SEM.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -198,9 +218,18 @@ cat /proc/sys/kernel/numa_balancing   # expect: 0</code></pre>
         <b>compute-bound</b> ceiling: <code>(GPUs × peak_FP8_FLOPS) ÷ (2 × active_params)</code>.
       </p>
       <p>
+        Mixed-precision checkpoints get a weighted <code>bytes_per_param</code> over the <i>active</i> set
+        rather than the label on the tin. Kimi-K3 is the worked example: MXFP4 covers only its
+        routed-expert <code>Linear</code>s, so a decode step streams 137.8&nbsp;GB for 105.4&nbsp;B active
+        params — <b>1.31</b> bytes/param, not 0.5, because the bf16 attention and shared experts dominate
+        what each token actually touches even though MXFP4 dominates the total.
+      </p>
+      <p>
         These are theoretical ceilings, not targets you'd hit at BS=1 — the headroom reflects small-batch
-        inefficiency plus AMD kernel maturity (no MTP/spec-decode here, reference attention paths, etc.).
-        Closing that headroom is the optimization work this cookbook tracks.
+        inefficiency plus AMD kernel maturity (reference attention paths, untuned GEMMs, and so on).
+        Speculative decoding can beat the BS=1 line, because the ceiling assumes one token per target
+        forward: Kimi-K3's DSpark cell reads 104 tok/s against a 464 tok/s ceiling by accepting several
+        tokens per pass. Closing the headroom is the optimization work this cookbook tracks.
       </p>
     </div>
     <div class="legal">

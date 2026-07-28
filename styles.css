@@ -350,6 +350,15 @@ section { padding: 46px 0; border-bottom: 1px solid var(--rule); }
 .dtable .nv td { color: var(--graphite); }
 .dtable caption { caption-side: bottom; text-align: left; font-family: var(--mono); font-size: 11px; color: var(--graphite); padding-top: 8px; }
 
+/* at-a-glance comparison — one row per verified cell, click to open the recipe */
+.cmp tbody tr { cursor: pointer; }
+.cmp tbody tr:hover td { background: var(--warn-wash); }
+.cmp tbody tr:focus-visible { outline: 2px solid var(--red); outline-offset: -2px; }
+.cmp tbody td small { color: var(--graphite-2); font-size: 10.5px; }
+.cmp .cmp-model { font-family: var(--disp); font-weight: 600; font-size: 13.5px; }
+.cmp .cmp-strat { font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em;
+  border: 1px solid var(--rule-2); border-radius: 3px; padding: 2px 7px; color: var(--ink-2); }
+
 /* accuracy chips */
 .acc { display: flex; flex-wrap: wrap; gap: 10px; }
 .acc .accitem { border: 1px solid var(--rule); border-radius: var(--radius); padding: 10px 14px; background: var(--paper-card); min-width: 150px; }
@@ -389,7 +398,7 @@ section { padding: 46px 0; border-bottom: 1px solid var(--rule); }
 .step p { margin: 0 0 10px; color: var(--ink-2); font-size: 14px; }
 
 /* references */
-.refs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.refs { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; }
 @media (max-width: 760px) { .refs { grid-template-columns: 1fr; } }
 .refcol h3 { font-size: .98rem; margin-bottom: 10px; }
 .refcol ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }

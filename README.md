@@ -35,6 +35,22 @@ Static, buildless, GitHub-Pages-ready. No framework, no bundler.
 Open `index.html` directly (`file://`) or serve the folder — data loads via a
 `<script>` tag, so it works either way with no server.
 
+Nothing else checks that `models.js` and `app.js` still agree, so there is one
+test:
+
+```bash
+npm i jsdom && node test_render.js
+```
+
+It renders the page, walks every verified cell, and asserts the recipe and the
+argument reference come out populated — including that every flag in a shipped
+launch command has a glossary entry rather than rendering as `—`.
+
+Recipes deep-link two ways: `#m=<model>` opens a model at its first verified
+cell, `#m=<model>&c=<gfx>:<strategy>` opens one specific cell. Use the second
+form whenever a model's cells disagree — Kimi-K3's DSpark cell and its plain
+cell reverse which one is faster.
+
 ### The roofline gauge
 
 Decode ceiling is a first-principles, memory-bound limit at batch size 1:
