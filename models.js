@@ -1113,7 +1113,7 @@ window.MODELS = [
           "--reasoning-parser kimi_k3 --tool-call-parser kimi_k3 split the reasoning trace into reasoning_content. Without them a short --max-tokens looks like it returns an empty answer, because the budget is spent inside the reasoning block.",
           "Effective weight precision for the roofline is 1.31 bytes/param, not 0.5: MXFP4 covers only the routed-expert Linears, and the ignore list keeps self_attn, shared_experts, the dense MLP, lm_head, vision_tower and mm_projector in bf16. Those bf16 tensors dominate the *active* set (114.4 of 137.8 GB per decode step) even though MXFP4 dominates the *total*.",
           "AIME25 needs sgl-eval, not in-tree run_eval, for the same answer-extraction reason as GLM-5.2. Both K3 configs answered every one of the 240 samples with a proper stop (stop_rate 100%, truncated 0%, no_answer 0%) at --max-tokens 64000.",
-          "KimiK3ForConditionalGeneration carries a vision tower, but every number here is text-only; multimodal is untested on this hardware."
+          "The vision path works in both cells, but only as a smoke test. A 420x160 PNG carrying rendered text came back correctly transcribed with image_tokens=90 in the usage block, under the plain config and under DSpark alike - notable for DSpark, whose draft model is text-only and might have been expected to choke on an image-bearing prefill. No multimodal benchmark or eval has been run, so treat this as \"the path is wired up\", not as a quality claim."
         ],
         "provenance": {
           "image": "source build in a ROCm 7.2.0 container - NOT the published Day-0 image lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 (that image takes the identical command and env, but was not what these numbers were measured on)",
@@ -1267,7 +1267,7 @@ window.MODELS = [
           "--reasoning-parser kimi_k3 --tool-call-parser kimi_k3 split the reasoning trace into reasoning_content. Without them a short --max-tokens looks like it returns an empty answer, because the budget is spent inside the reasoning block.",
           "Effective weight precision for the roofline is 1.31 bytes/param, not 0.5: MXFP4 covers only the routed-expert Linears, and the ignore list keeps self_attn, shared_experts, the dense MLP, lm_head, vision_tower and mm_projector in bf16. Those bf16 tensors dominate the *active* set (114.4 of 137.8 GB per decode step) even though MXFP4 dominates the *total*.",
           "AIME25 needs sgl-eval, not in-tree run_eval, for the same answer-extraction reason as GLM-5.2. Both K3 configs answered every one of the 240 samples with a proper stop (stop_rate 100%, truncated 0%, no_answer 0%) at --max-tokens 64000.",
-          "KimiK3ForConditionalGeneration carries a vision tower, but every number here is text-only; multimodal is untested on this hardware."
+          "The vision path works in both cells, but only as a smoke test. A 420x160 PNG carrying rendered text came back correctly transcribed with image_tokens=90 in the usage block, under the plain config and under DSpark alike - notable for DSpark, whose draft model is text-only and might have been expected to choke on an image-bearing prefill. No multimodal benchmark or eval has been run, so treat this as \"the path is wired up\", not as a quality claim."
         ],
         "provenance": {
           "image": "source build in a ROCm 7.2.0 container - NOT the published Day-0 image lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 (that image takes the identical command and env, but was not what these numbers were measured on)",
@@ -1288,9 +1288,9 @@ window.MODELS = [
         "cmd": "# 1. request access at https://huggingface.co/datasets/Idavidrein/gpqa\n# 2. export HF_TOKEN=<your token>   (never write it to a file)\nsgl-eval run gpqa --base-url http://127.0.0.1:30000/v1 \\\n  --model moonshotai/Kimi-K3 --api-key EMPTY \\\n  --n-repeats 4 --num-threads 48 --max-tokens 64000 \\\n  --temperature 1.0 --top-p 0.95 --thinking"
       },
       {
-        "title": "Multimodal (vision tower)",
+        "title": "Multimodal (vision tower) \u2014 benchmark, not just smoke test",
         "kind": "metric",
-        "note": "KimiK3ForConditionalGeneration ships a vision tower and a 0.4 B projector, and every number on this page is text-only. Nothing about the image path has been exercised.",
+        "note": "A single rendered-text PNG round-trips correctly in both cells (image_tokens=90, answer transcribed, server stable), so the vision path is wired up. Nothing beyond that: no image benchmark, no MMMU-Pro, no throughput with image prefill.",
         "cmd": "sgl-eval run mmmu_pro --base-url http://127.0.0.1:30000/v1 \\\n  --model moonshotai/Kimi-K3 --api-key EMPTY \\\n  --num-threads 32 --max-tokens 32000 --temperature 1.0 --top-p 0.95"
       },
       {

@@ -263,8 +263,11 @@ git apply dspark_rocm_renorm.patch   # in your sglang checkout
 - **DSpark cuts `max_running_requests` to 48** (from 368). If you need more
   concurrent streams than that, serve the non-spec config — which, per section 5,
   is also the faster one under exactly those conditions.
-- **Multimodal is present but untested here.** `KimiK3ForConditionalGeneration`
-  carries a vision tower; every number in this playbook is text-only.
+- **The vision path works, but only smoke-tested.** A 420×160 PNG with rendered
+  text came back correctly transcribed (`image_tokens: 90` in the usage block)
+  under both cells — including DSpark, whose draft model is text-only and might
+  have been expected to choke on an image-bearing prefill. Every *number* in
+  this playbook is still text-only; no image benchmark or eval has been run.
 - **GPQA is blocked, not skipped.** The checkpoint ships `.eval_results/`
   claiming GPQA-diamond 93.5 and HLE 56.0. Reproducing GPQA needs
   `Idavidrein/gpqa`, which is a gated HF dataset — an `HF_TOKEN` alone is not
