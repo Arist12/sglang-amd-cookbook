@@ -963,8 +963,8 @@ window.MODELS = [
     "active_params_billions": 105.4,
     "bytes_per_param": 1.31,
     "weights_gb": 1561,
-    "context_len": "1048576",
-    "summary": "Day-0 bring-up of moonshotai/Kimi-K3 (2.78T total / 105.4B active, hybrid KDA + MLA, 896 routed experts) on 8x MI355X at TP=8, in both the plain and the DSpark speculative-decoding configuration from sgl-project/sglang#32548. Accuracy is at parity between the two and healthy in absolute terms: GSM8K 97.49% / 97.64%, AIME25 pass@1 avg-of-8 93.33% / 94.58% - speculative decoding is lossless, as it should be. Throughput is where they differ, and the direction flips: DSpark is 1.54x faster on greedy GSM8K (accept length 5.95) and doubles single-stream decode (51.40 -> 104.00 tok/s), but 3.45x SLOWER on sampled AIME25 at 48 concurrent (accept length ~2.9), where its 8-wide verify window costs 2.76 target token-slots per accepted token against a compute-bound batch. The 1.56 TB checkpoint lands at 194.38 GB/GPU under the aiter MXFP4 path (which is mandatory, not a tuning knob). Serving DSpark with any non-greedy sampling needs dspark_rocm_renorm.patch, without which the first top_p batch takes the scheduler down on ROCm.",
+    "context_len": "1048576 (measured to 131072)",
+    "summary": "Day-0 bring-up of moonshotai/Kimi-K3 (2.78T total / 105.4B active, hybrid KDA + MLA, 896 routed experts) on 8x MI355X at TP=8, in both the plain and the DSpark speculative-decoding configuration from sgl-project/sglang#32548. Accuracy is at parity between the two and healthy in absolute terms: GSM8K 97.49% / 97.64%, AIME25 pass@1 avg-of-8 93.33% / 94.58% - speculative decoding is lossless, as it should be. Everything else about DSpark is conditional, and the condition is accept length. It doubles single-stream decode on short greedy prompts (51.40 -> 104.00 tok/s, accept 5.95 on GSM8K) and is 1.54x faster over a full GSM8K run; it is 3.45x slower on sampled AIME25 at 48 concurrent (accept ~2.9) and 10x slower at 131k context (accept 1.2), where the plain config holds TPOT almost flat at 22 ms because only 24 of 93 layers carry a growing KV cache. The 1.56 TB checkpoint lands at 194.38 GB/GPU under the aiter MXFP4 path, which is mandatory rather than a tuning knob. Serving DSpark with any non-greedy sampling needs dspark_rocm_renorm.patch, without which the first top_p batch takes the scheduler down on ROCm.",
     "configs": [
       {
         "gfx": "gfx950",
@@ -1069,10 +1069,38 @@ window.MODELS = [
             "total_tok_s": 1338.66,
             "tok_s_per_gpu": 167.3,
             "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024, accept length 3.26)"
+          },
+          {
+            "isl": 8192,
+            "osl": 512,
+            "concurrency": 1,
+            "ttft_ms": 644,
+            "tpot_ms": 15.2,
+            "decode_tok_s": 65.8,
+            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, DSpark)"
+          },
+          {
+            "isl": 32768,
+            "osl": 512,
+            "concurrency": 1,
+            "ttft_ms": 3189,
+            "tpot_ms": 48.93,
+            "decode_tok_s": 20.4,
+            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, DSpark)"
+          },
+          {
+            "isl": 131072,
+            "osl": 512,
+            "concurrency": 1,
+            "ttft_ms": 23956,
+            "tpot_ms": 221.49,
+            "decode_tok_s": 4.5,
+            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, DSpark)"
           }
         ],
         "vs_nvidia": [],
         "gotchas": [
+          "Turn DSpark OFF for long context - this is the sharpest knob on the page. Single-stream TPOT runs 9.43 / 15.20 / 48.93 / 221.49 ms at 1k / 8k / 32k / 131k input with DSpark, against 19.28 / 19.54 / 20.41 / 22.13 ms without it. The plain config is almost flat because only 24 of 93 layers carry a growing KV cache - the other 69 are constant-state KDA - so a 128x longer prompt costs 15% more per token. DSpark inverts from 2x faster to 10x slower over the same range because accept length collapses to 1.18-1.32 at 131k (accept rate 0.03): the 5-layer dense draft model cannot track that much context, so every step pays 8 target token-slots to land ~1.2 tokens. TTFT is unaffected either way (23.96 s vs 24.03 s at 131k) - speculative decoding does not touch prefill.",
           "Whether DSpark helps or hurts flips with accept length x concurrency, and the eval runs make the size of it concrete. GSM8K (greedy, 32 threads, accept 5.95): 393.7 s / 711 tok/s with DSpark vs 605.4 s / 469 tok/s without - 1.54x faster. AIME25 (temperature 1.0, 48 threads, accept ~2.9): 6779.7 s / 188 tok/s with DSpark vs 1964.1 s / 692 tok/s without - 3.45x SLOWER. At 8 draft tokens per step and accept 2.9, each accepted token costs 2.76 target token-slots; with a full batch the target is compute-bound, so that overhead lands directly on throughput.",
           "DSpark + any non-greedy sampling killed the scheduler on ROCm before dspark_rocm_renorm.patch: build_dflash_verify_target_probs calls top_k_renorm_prob / top_p_renorm_prob, which sglang imports from sgl_kernel only under is_cuda() or is_musa() and leaves as None elsewhere, so the first decode batch carrying top_p or top_k dies with \"TypeError: 'NoneType' object is not callable\". Greedy traffic (GSM8K) never touches it, so this hides until an AIME-style run. DFLASH escapes because its worker gates non-greedy verify on is_dflash_sampling_verify_available() and degrades to greedy argmax; DSPARK has no such gate. The patch routes the renorm to the torch implementations instead of degrading, which keeps sampling semantics intact.",
           "DSpark accept length is a property of the workload, not of the platform. Measured on this node: 5.95 mean over 1314 GSM8K requests (greedy, structured math; min 3.72 max 7.67), 3.26-3.32 on bench_serving random 1024/1024, 3.28 on ShareGPT, and 2.9-3.0 during AIME25 (temperature 1.0, top_p 0.95, long open-ended reasoning). The 5.29-5.93 quoted in #32548 sits at the GSM8K-like end of that range and reproduces here - an earlier revision of this page wrongly filed the low random/ShareGPT numbers as an unexplained platform gap.",
@@ -1200,10 +1228,38 @@ window.MODELS = [
             "total_tok_s": 1695.74,
             "tok_s_per_gpu": 212.0,
             "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024)"
+          },
+          {
+            "isl": 8192,
+            "osl": 512,
+            "concurrency": 1,
+            "ttft_ms": 623,
+            "tpot_ms": 19.54,
+            "decode_tok_s": 51.2,
+            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, no speculative decoding)"
+          },
+          {
+            "isl": 32768,
+            "osl": 512,
+            "concurrency": 1,
+            "ttft_ms": 3135,
+            "tpot_ms": 20.41,
+            "decode_tok_s": 49.0,
+            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, no speculative decoding)"
+          },
+          {
+            "isl": 131072,
+            "osl": 512,
+            "concurrency": 1,
+            "ttft_ms": 24026,
+            "tpot_ms": 22.13,
+            "decode_tok_s": 45.2,
+            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, no speculative decoding)"
           }
         ],
         "vs_nvidia": [],
         "gotchas": [
+          "Turn DSpark OFF for long context - this is the sharpest knob on the page. Single-stream TPOT runs 9.43 / 15.20 / 48.93 / 221.49 ms at 1k / 8k / 32k / 131k input with DSpark, against 19.28 / 19.54 / 20.41 / 22.13 ms without it. The plain config is almost flat because only 24 of 93 layers carry a growing KV cache - the other 69 are constant-state KDA - so a 128x longer prompt costs 15% more per token. DSpark inverts from 2x faster to 10x slower over the same range because accept length collapses to 1.18-1.32 at 131k (accept rate 0.03): the 5-layer dense draft model cannot track that much context, so every step pays 8 target token-slots to land ~1.2 tokens. TTFT is unaffected either way (23.96 s vs 24.03 s at 131k) - speculative decoding does not touch prefill.",
           "This is the throughput answer whenever the batch is full or the traffic is sampled rather than greedy: 1695.74 vs DSpark's 1338.66 tok/s at concurrency 32 on the synthetic sweep, and 3.45x faster wall clock on the real AIME25 run (1964.1 s / 692 tok/s vs 6779.7 s / 188 tok/s). It also keeps max_running_requests at 368 with a 21.35 GB / 829,332-token KV pool. Below ~concurrency 8, or on greedy structured workloads like GSM8K, DSpark wins instead - see the low-latency cell.",
           "Accuracy matches the DSpark cell (GSM8K 97.49% vs 97.64%, AIME25 93.33% vs 94.58%, both within noise), so the choice between the two cells is purely a throughput/latency one.",
           "The four AITER env vars are load-bearing, not tuning knobs. Without them the routed experts unpack from MXFP4 and target weights go 194.38 -> 249.29 GB/GPU; the server then dies in _profile_available_bytes with 'Loaded weights leave no GPU memory for the KV cache' at --mem-fraction-static 0.85 AND 0.93 alike. No mem-fraction rescues it on a 288 GiB card.",
@@ -1226,22 +1282,22 @@ window.MODELS = [
     ],
     "gaps": [
       {
-        "title": "Long context (up to 1M) and multimodal",
-        "kind": "metric",
-        "note": "Only ISL 1024 measured, text-only. The model advertises a 1,048,576-token window and ships a vision tower.",
-        "cmd": "for IN in 8192 32768 131072; do\n  python3 -m sglang.bench_serving --backend sglang-oai-chat \\\n    --model moonshotai/Kimi-K3 --dataset-name random \\\n    --random-input-len $IN --random-output-len 512 --random-range-ratio 1 \\\n    --num-prompts 2 --max-concurrency 1 --port 30000\ndone"
-      },
-      {
         "title": "GPQA-diamond / HLE vs the model card",
         "kind": "metric",
-        "note": "The checkpoint ships .eval_results/ claiming GPQA-diamond 93.5 and HLE 56.0. Neither is reproduced here; GPQA is cheap enough to be the next one to close.",
-        "cmd": "sgl-eval run gpqa --base-url http://127.0.0.1:30000/v1 \\\n  --model moonshotai/Kimi-K3 --api-key EMPTY \\\n  --n-repeats 4 --num-threads 48 --max-tokens 64000 \\\n  --temperature 1.0 --top-p 0.95 --thinking"
+        "note": "Blocked, not skipped: the checkpoint ships .eval_results/ claiming GPQA-diamond 93.5 and HLE 56.0, but Idavidrein/gpqa is a gated HF dataset and the run account has not been granted access. Request access on the dataset page, then the command below works as-is.",
+        "cmd": "# 1. request access at https://huggingface.co/datasets/Idavidrein/gpqa\n# 2. export HF_TOKEN=<your token>   (never write it to a file)\nsgl-eval run gpqa --base-url http://127.0.0.1:30000/v1 \\\n  --model moonshotai/Kimi-K3 --api-key EMPTY \\\n  --n-repeats 4 --num-threads 48 --max-tokens 64000 \\\n  --temperature 1.0 --top-p 0.95 --thinking"
+      },
+      {
+        "title": "Multimodal (vision tower)",
+        "kind": "metric",
+        "note": "KimiK3ForConditionalGeneration ships a vision tower and a 0.4 B projector, and every number on this page is text-only. Nothing about the image path has been exercised.",
+        "cmd": "sgl-eval run mmmu_pro --base-url http://127.0.0.1:30000/v1 \\\n  --model moonshotai/Kimi-K3 --api-key EMPTY \\\n  --num-threads 32 --max-tokens 32000 --temperature 1.0 --top-p 0.95"
       },
       {
         "title": "Day-0 image cross-check",
         "kind": "strategy",
-        "note": "All numbers come from a source build. Re-running the same sweep inside lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 would confirm the published image behaves identically - and whether it already carries the DSpark ROCm renorm fix.",
-        "cmd": "docker run -d --name k3-day0 \\\n  --device=/dev/kfd --device=/dev/dri --network=host --ipc=host \\\n  --group-add video --cap-add SYS_PTRACE --shm-size=32g \\\n  -v $HOME/hf-cache:/hf-cache -e HF_HOME=/hf-cache \\\n  lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 sleep infinity\n\n# does the image still crash on non-greedy DSpark?\ndocker exec k3-day0 curl -s localhost:30000/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"model\":\"moonshotai/Kimi-K3\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"temperature\":1.0,\"top_p\":0.95}'"
+        "note": "All numbers come from a source build. Re-running inside lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 would confirm the published image behaves identically - and whether it already carries the DSpark ROCm renorm fix or still dies on the first top_p batch.",
+        "cmd": "docker run -d --name k3-day0 \\\n  --device=/dev/kfd --device=/dev/dri --network=host --ipc=host \\\n  --group-add video --cap-add SYS_PTRACE --shm-size=32g \\\n  -v $HOME/hf-cache:/hf-cache -e HF_HOME=/hf-cache \\\n  lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 sleep infinity\n\n# does the image still crash on non-greedy DSpark?\ncurl -s localhost:30000/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"model\":\"moonshotai/Kimi-K3\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"temperature\":1.0,\"top_p\":0.95}'"
       },
       {
         "title": "MI300X (gfx942)",

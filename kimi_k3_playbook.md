@@ -10,8 +10,8 @@ Upstream: [sgl-project/sglang#32541](https://github.com/sgl-project/sglang/pull/
 (the AMD Day-0 recipe this reproduces).
 
 **Headline:** the two configurations are accuracy-identical and speed-opposite.
-DSpark is 1.54× faster on greedy GSM8K and 3.45× *slower* on sampled AIME25.
-Pick per workload, not once.
+DSpark is 1.54× faster on greedy GSM8K, 3.45× *slower* on sampled AIME25, and
+10× slower at 131k context. Pick per workload, not once.
 
 ## 1. The model
 
@@ -156,6 +156,31 @@ the extra slots come straight off throughput. Concurrency and accept length
 therefore have to be read together — which is why this cookbook files DSpark
 under *low-latency* and the plain config under *high-throughput*.
 
+### Long context: the plain config is flat, DSpark falls off a cliff
+
+Single stream, OSL 512, `--dataset-name random`:
+
+| ISL | non-spec TTFT | non-spec TPOT | DSpark TTFT | DSpark TPOT |
+|------:|-------:|-------:|-------:|--------:|
+| 1,024 | 178 ms | 19.28 ms | 182 ms | **9.43 ms** |
+| 8,192 | 623 ms | 19.54 ms | 644 ms | **15.20 ms** |
+| 32,768 | 3135 ms | **20.41 ms** | 3189 ms | 48.93 ms |
+| 131,072 | 24.03 s | **22.13 ms** | 23.96 s | 221.49 ms |
+
+The plain config barely notices: a 128× longer prompt costs 15% more per token.
+That is the hybrid architecture doing its job — only 24 of the 93 layers are
+full MLA and carry a growing KV cache, the other 69 are constant-state KDA.
+
+DSpark goes the other way, from 2× faster at 1k to 10× slower at 131k, and the
+server log says why: accept length collapses to **1.18–1.32** at 131k, an accept
+rate of 0.03. The draft model is 5 dense MQA layers; it cannot track that much
+context, so every step pays 8 target token-slots to land ~1.2 tokens. TTFT is
+identical between the two at every length, which is the expected control —
+speculative decoding does not touch prefill.
+
+**So: turn DSpark off for long-context serving.** It is the sharpest
+configuration knob on this page.
+
 ### Accept length is a workload property, not a platform defect
 
 An earlier revision of this page filed our low accept-length readings as an
@@ -168,6 +193,7 @@ the GSM8K run settles it. Measured on this node:
 | ShareGPT (open-ended chat) | 3.28 |
 | `bench_serving` random 1024/1024 | 3.26–3.32 |
 | AIME25 (temp 1.0, top_p 0.95, long reasoning) | 2.9–3.0 |
+| 131k-token context, single stream | **1.18–1.32** |
 
 The upstream figure sits at the GSM8K-like end of that range and reproduces here
 exactly. Both content and sampling move it: predictable structured text lets the
@@ -238,9 +264,12 @@ git apply dspark_rocm_renorm.patch   # in your sglang checkout
   concurrent streams than that, serve the non-spec config — which, per section 5,
   is also the faster one under exactly those conditions.
 - **Multimodal is present but untested here.** `KimiK3ForConditionalGeneration`
-  carries a vision tower; every number in this playbook is text-only. The
-  checkpoint also ships `.eval_results/` claiming GPQA-diamond 93.5 and HLE 56.0,
-  neither of which is reproduced here yet.
+  carries a vision tower; every number in this playbook is text-only.
+- **GPQA is blocked, not skipped.** The checkpoint ships `.eval_results/`
+  claiming GPQA-diamond 93.5 and HLE 56.0. Reproducing GPQA needs
+  `Idavidrein/gpqa`, which is a gated HF dataset — an `HF_TOKEN` alone is not
+  enough, the account has to be granted access on the dataset page first.
+  `sgl-eval` fails with `DatasetNotFoundError` until then.
 
 ## 7. Provenance
 
