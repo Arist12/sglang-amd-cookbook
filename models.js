@@ -951,6 +951,276 @@ window.MODELS = [
     ]
   },
   {
+    "id": "kimi-k3",
+    "name": "Kimi-K3",
+    "family": "Moonshot",
+    "hf_path": "moonshotai/Kimi-K3",
+    "architecture": "Hybrid 93-layer MoE: 69 KDA linear-attention layers + 24 full MLA layers, 896 routed experts (top-16) + 2 shared, `situ` activation, 1M context, vision tower (KimiK3ForConditionalGeneration / text_config model_type kimi_linear)",
+    "precision": "MXFP4 routed experts + bf16 everything else (effective 1.31 bytes/param on the active set)",
+    "status": "verified",
+    "params_active": "105.4B",
+    "params_total": "2.78T",
+    "active_params_billions": 105.4,
+    "bytes_per_param": 1.31,
+    "weights_gb": 1561,
+    "context_len": "1048576",
+    "summary": "Day-0 bring-up of moonshotai/Kimi-K3 (2.78T total / 105.4B active, hybrid KDA + MLA, 896 routed experts) on 8x MI355X at TP=8, in both the plain and the DSpark speculative-decoding configuration from sgl-project/sglang#32548. Both launched, served and swept unmodified - no source patches were needed. The 1.56 TB checkpoint lands at 194.38 GB/GPU under the aiter MXFP4 path, leaving a 21.35 GB KV pool (829,332 tokens, 368 concurrent requests) at --mem-fraction-static 0.85; DSpark trades that down to 14.02 GB / 48 requests for the draft model. DSpark doubles single-stream decode (51.40 -> 104.00 tok/s) and wins TTFT/TPOT up to ~concurrency 8, then loses aggregate throughput to the plain config at concurrency 32 (1338.66 vs 1695.74 tok/s) - hence the two cells. One open gap: accept length measures 3.26-3.32 against the 5.29-5.93 reported upstream, with workload, sampling temperature and AITER_SITUV2_A8W4 all ruled out as causes.",
+    "configs": [
+      {
+        "gfx": "gfx950",
+        "hw_name": "MI355X",
+        "gpus": 8,
+        "quant": "MXFP4 routed experts (compressed-tensors mxfp4-pack-quantized, group_size 32) + bf16 attention/shared-experts/lm_head, bf16 KV cache",
+        "strategy": "low-latency",
+        "nodes": "single",
+        "verified": true,
+        "docker_image": "lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727",
+        "launch_python": "export SGLANG_USE_AITER=1\nexport SGLANG_AITER_K3_OPT=1\nexport AITER_FLYDSL_FORCE=1\nexport AITER_SITUV2_A8W4=1\nsglang serve \\\n  --model-path moonshotai/Kimi-K3 \\\n  --trust-remote-code \\\n  --tp 8 \\\n  --attention-backend triton \\\n  --dtype bfloat16 \\\n  --mem-fraction-static 0.85 \\\n  --cuda-graph-max-bs-decode 256 \\\n  --disable-radix-cache \\\n  --reasoning-parser kimi_k3 \\\n  --tool-call-parser kimi_k3 \\\n  --speculative-draft-model-path RadixArk/Kimi-K3-DSpark \\\n  --speculative-algorithm DSPARK \\\n  --host 0.0.0.0 --port 30000",
+        "parallelism": {
+          "tp": 8,
+          "ep": null,
+          "dp": null
+        },
+        "attention_backend": "triton (full-MLA layers); KDA linear-attention layers default to the triton packed decode. DSpark draft attention overrides to triton on ROCm.",
+        "moe_backend": "aiter MXFP4 (Mxfp4MoEMethod), 896 routed experts top-16 + 2 shared",
+        "aiter": {
+          "enabled": true,
+          "commit": "68e42f5f",
+          "kernels": [
+            "MXFP4 MoE (mxfp4-pack-quantized routed experts)",
+            "SITU activation / A8W4 GEMM",
+            "FlyDSL codegen kernels",
+            "fused RoPE, fused qk_norm_mrope_3d"
+          ],
+          "tuned_artifacts": [
+            "aiter k3-for-amd branch @ 68e42f5f (carries the #17 xinyi/k3-opt merge)"
+          ],
+          "summary": "AITER is not optional here. SGLANG_USE_AITER=1 + SGLANG_AITER_K3_OPT=1 select the MXFP4 path that keeps the 896 routed experts packed at 194.38 GB/GPU; without it they unpack to 249.29 GB/GPU and no --mem-fraction-static leaves room for a KV pool on a 288 GiB card. AITER_SITUV2_A8W4 backs the model's `situ` activation, AITER_FLYDSL_FORCE the FlyDSL MoE kernels."
+        },
+        "env": [
+          {
+            "key": "SGLANG_USE_AITER",
+            "value": "1",
+            "why": "Mandatory. Enables the aiter kernels, including the MXFP4 MoE path that keeps routed-expert weights packed."
+          },
+          {
+            "key": "SGLANG_AITER_K3_OPT",
+            "value": "1",
+            "why": "Mandatory. K3-specific opt paths in models/kimi_k3.py and layers/quantization/mxfp4.py."
+          },
+          {
+            "key": "AITER_FLYDSL_FORCE",
+            "value": "1",
+            "why": "Force the FlyDSL-generated MoE kernels on gfx950."
+          },
+          {
+            "key": "AITER_SITUV2_A8W4",
+            "value": "1",
+            "why": "8-bit-activation / 4-bit-weight GEMM for the model's `situ` activation (hidden_act=situ)."
+          },
+          {
+            "key": "HF_HUB_OFFLINE",
+            "value": "1",
+            "why": "Serve the 1.56 TB checkpoint from the local HF cache; avoids a gated-repo revalidation stalling boot."
+          }
+        ],
+        "accuracy": [],
+        "benchmarks": [
+          {
+            "isl": 1024,
+            "osl": 1024,
+            "concurrency": 1,
+            "ttft_ms": 182,
+            "tpot_ms": 9.43,
+            "decode_tok_s": 104.0,
+            "total_tok_s": 208.0,
+            "tok_s_per_gpu": 26.0,
+            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024, accept length 3.32)"
+          },
+          {
+            "isl": 1024,
+            "osl": 1024,
+            "concurrency": 8,
+            "ttft_ms": 669,
+            "tpot_ms": 18.27,
+            "total_tok_s": 758.03,
+            "tok_s_per_gpu": 94.8,
+            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024, accept length 3.26)"
+          },
+          {
+            "isl": 1024,
+            "osl": 1024,
+            "concurrency": 32,
+            "ttft_ms": 1073,
+            "tpot_ms": 40.09,
+            "total_tok_s": 1338.66,
+            "tok_s_per_gpu": 167.3,
+            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024, accept length 3.26)"
+          }
+        ],
+        "vs_nvidia": [],
+        "gotchas": [
+          "DSpark doubles single-stream decode (51.40 -> 104.00 tok/s) but LOSES on aggregate throughput past ~concurrency 32 (1338.66 vs 1695.74 tok/s): with a full batch the target is already compute-saturated and rejected draft tokens are wasted work. Serve the high-throughput config there. The same crossover appears in #32548 (3715 vs 4898 tok/s at concurrency 32).",
+          "OPEN: accept length measures 3.26-3.32 here vs the 5.29-5.93 reported in #32548 - accept rate 0.32 instead of 0.68 against the same gamma=7 / 8-wide verify window. Ruled out: workload (ShareGPT 3.28 vs random 3.26), sampling (greedy 2.3-3.7), AITER_SITUV2_A8W4 (2.5-3.6 with it off). Output quality is unaffected because the target verifies every token, so this costs speed, not correctness. Prime suspect is version skew against whatever sglang+aiter pair the Day-0 image pins.",
+          "The draft-worker verify CUDA graph captures num_tokens_per_req=7 while the runner reports verify_num_draft_tokens=8. That is by design - SpeculativeAlgorithm.get_num_tokens_per_req_for_target_verify returns num_draft_tokens - 1 for the DSpark draft worker - not a mis-sized window.",
+          "ROCm backend fallbacks are all correct and silent: is_sm100_supported() is false so the trtllm_mha draft default never applies (it overrides to triton), and the nv_cutedsl verify backend that kimi_k3_hook.py pins unconditionally resolves to the triton KDA kernel off CUDA, with the fused DSpark CuTe MTP path gated behind is_cuda().",
+          "DSpark cuts max_running_requests to 48 (from 368) and the KV pool to 14.02 GB / 544,533 tokens, paying for draft weights, a second CUDA-graph set and the 8-wide verify window.",
+          "The four AITER env vars are load-bearing, not tuning knobs. Without them the routed experts unpack from MXFP4 and target weights go 194.38 -> 249.29 GB/GPU; the server then dies in _profile_available_bytes with 'Loaded weights leave no GPU memory for the KV cache' at --mem-fraction-static 0.85 AND 0.93 alike. No mem-fraction rescues it on a 288 GiB card.",
+          "First weight load is disk-bound: ~16 min cold (96 shards, ~25 s/shard). With the page cache warm the same load takes 105 s and the whole boot is ~3 min - budget the first launch, then stop worrying about restarts.",
+          "--reasoning-parser kimi_k3 --tool-call-parser kimi_k3 split the reasoning trace into reasoning_content. Without them a short --max-tokens looks like it returns an empty answer, because the budget is spent inside the reasoning block.",
+          "Effective weight precision for the roofline is 1.31 bytes/param, not 0.5: MXFP4 covers only the routed-expert Linears, and the ignore list keeps self_attn, shared_experts, the dense MLP, lm_head, vision_tower and mm_projector in bf16. Those bf16 tensors dominate the *active* set (114.4 of 137.8 GB per decode step) even though MXFP4 dominates the *total*.",
+          "KimiK3ForConditionalGeneration carries a vision tower, but every number here is text-only; multimodal is untested on this hardware."
+        ],
+        "provenance": {
+          "image": "source build in a ROCm 7.2.0 container - NOT the published Day-0 image lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 (that image takes the identical command and env, but was not what these numbers were measured on)",
+          "pr": "sgl-project/sglang#32541 (Kimi-K3 support); #32548 (AMD Day-0 recipe)",
+          "sglang": "DarkSharpness/sglang-kimi @ amd/kimi-k3 533bff471 (= #32541 kimi-k3 + HIP multi-stream disable), reports 0.5.15.post1.dev20260723+g6c9fd0adc5",
+          "aiter": "k3-for-amd 68e42f5f",
+          "rocm": "7.2.0 (torch 2.9.1+rocm7.2.0)",
+          "date": "2026-07-28",
+          "node": "8x AMD Instinct MI355X (gfx950), 288 GiB each, single node"
+        }
+      },
+      {
+        "gfx": "gfx950",
+        "hw_name": "MI355X",
+        "gpus": 8,
+        "quant": "MXFP4 routed experts (compressed-tensors mxfp4-pack-quantized, group_size 32) + bf16 attention/shared-experts/lm_head, bf16 KV cache",
+        "strategy": "high-throughput",
+        "nodes": "single",
+        "verified": true,
+        "docker_image": "lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727",
+        "launch_python": "export SGLANG_USE_AITER=1\nexport SGLANG_AITER_K3_OPT=1\nexport AITER_FLYDSL_FORCE=1\nexport AITER_SITUV2_A8W4=1\nsglang serve \\\n  --model-path moonshotai/Kimi-K3 \\\n  --trust-remote-code \\\n  --tp 8 \\\n  --attention-backend triton \\\n  --dtype bfloat16 \\\n  --mem-fraction-static 0.85 \\\n  --cuda-graph-max-bs-decode 256 \\\n  --disable-radix-cache \\\n  --reasoning-parser kimi_k3 \\\n  --tool-call-parser kimi_k3 \\\n  --host 0.0.0.0 --port 30000",
+        "parallelism": {
+          "tp": 8,
+          "ep": null,
+          "dp": null
+        },
+        "attention_backend": "triton (full-MLA layers); KDA linear-attention layers default to the triton packed decode",
+        "moe_backend": "aiter MXFP4 (Mxfp4MoEMethod), 896 routed experts top-16 + 2 shared",
+        "aiter": {
+          "enabled": true,
+          "commit": "68e42f5f",
+          "kernels": [
+            "MXFP4 MoE (mxfp4-pack-quantized routed experts)",
+            "SITU activation / A8W4 GEMM",
+            "FlyDSL codegen kernels",
+            "fused RoPE, fused qk_norm_mrope_3d"
+          ],
+          "tuned_artifacts": [
+            "aiter k3-for-amd branch @ 68e42f5f (carries the #17 xinyi/k3-opt merge)"
+          ],
+          "summary": "AITER is not optional here. SGLANG_USE_AITER=1 + SGLANG_AITER_K3_OPT=1 select the MXFP4 path that keeps the 896 routed experts packed at 194.38 GB/GPU; without it they unpack to 249.29 GB/GPU and no --mem-fraction-static leaves room for a KV pool on a 288 GiB card. AITER_SITUV2_A8W4 backs the model's `situ` activation, AITER_FLYDSL_FORCE the FlyDSL MoE kernels."
+        },
+        "env": [
+          {
+            "key": "SGLANG_USE_AITER",
+            "value": "1",
+            "why": "Mandatory. Enables the aiter kernels, including the MXFP4 MoE path that keeps routed-expert weights packed."
+          },
+          {
+            "key": "SGLANG_AITER_K3_OPT",
+            "value": "1",
+            "why": "Mandatory. K3-specific opt paths in models/kimi_k3.py and layers/quantization/mxfp4.py."
+          },
+          {
+            "key": "AITER_FLYDSL_FORCE",
+            "value": "1",
+            "why": "Force the FlyDSL-generated MoE kernels on gfx950."
+          },
+          {
+            "key": "AITER_SITUV2_A8W4",
+            "value": "1",
+            "why": "8-bit-activation / 4-bit-weight GEMM for the model's `situ` activation (hidden_act=situ)."
+          },
+          {
+            "key": "HF_HUB_OFFLINE",
+            "value": "1",
+            "why": "Serve the 1.56 TB checkpoint from the local HF cache; avoids a gated-repo revalidation stalling boot."
+          }
+        ],
+        "accuracy": [],
+        "benchmarks": [
+          {
+            "isl": 1024,
+            "osl": 1024,
+            "concurrency": 1,
+            "ttft_ms": 178,
+            "tpot_ms": 19.28,
+            "decode_tok_s": 51.4,
+            "total_tok_s": 102.81,
+            "tok_s_per_gpu": 12.9,
+            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024)"
+          },
+          {
+            "isl": 1024,
+            "osl": 1024,
+            "concurrency": 8,
+            "ttft_ms": 993,
+            "tpot_ms": 24.72,
+            "total_tok_s": 623.57,
+            "tok_s_per_gpu": 78.0,
+            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024)"
+          },
+          {
+            "isl": 1024,
+            "osl": 1024,
+            "concurrency": 32,
+            "ttft_ms": 2397,
+            "tpot_ms": 35.58,
+            "total_tok_s": 1695.74,
+            "tok_s_per_gpu": 212.0,
+            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024)"
+          }
+        ],
+        "vs_nvidia": [],
+        "gotchas": [
+          "This config wins on aggregate throughput past ~concurrency 32 (1695.74 vs DSpark's 1338.66 tok/s) and keeps max_running_requests at 368 with a 21.35 GB / 829,332-token KV pool. Below that, DSpark is the better latency answer - see the low-latency cell.",
+          "The four AITER env vars are load-bearing, not tuning knobs. Without them the routed experts unpack from MXFP4 and target weights go 194.38 -> 249.29 GB/GPU; the server then dies in _profile_available_bytes with 'Loaded weights leave no GPU memory for the KV cache' at --mem-fraction-static 0.85 AND 0.93 alike. No mem-fraction rescues it on a 288 GiB card.",
+          "First weight load is disk-bound: ~16 min cold (96 shards, ~25 s/shard). With the page cache warm the same load takes 105 s and the whole boot is ~3 min - budget the first launch, then stop worrying about restarts.",
+          "--reasoning-parser kimi_k3 --tool-call-parser kimi_k3 split the reasoning trace into reasoning_content. Without them a short --max-tokens looks like it returns an empty answer, because the budget is spent inside the reasoning block.",
+          "Effective weight precision for the roofline is 1.31 bytes/param, not 0.5: MXFP4 covers only the routed-expert Linears, and the ignore list keeps self_attn, shared_experts, the dense MLP, lm_head, vision_tower and mm_projector in bf16. Those bf16 tensors dominate the *active* set (114.4 of 137.8 GB per decode step) even though MXFP4 dominates the *total*.",
+          "KimiK3ForConditionalGeneration carries a vision tower, but every number here is text-only; multimodal is untested on this hardware."
+        ],
+        "provenance": {
+          "image": "source build in a ROCm 7.2.0 container - NOT the published Day-0 image lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 (that image takes the identical command and env, but was not what these numbers were measured on)",
+          "pr": "sgl-project/sglang#32541 (Kimi-K3 support); #32548 (AMD Day-0 recipe)",
+          "sglang": "DarkSharpness/sglang-kimi @ amd/kimi-k3 533bff471 (= #32541 kimi-k3 + HIP multi-stream disable), reports 0.5.15.post1.dev20260723+g6c9fd0adc5",
+          "aiter": "k3-for-amd 68e42f5f",
+          "rocm": "7.2.0 (torch 2.9.1+rocm7.2.0)",
+          "date": "2026-07-28",
+          "node": "8x AMD Instinct MI355X (gfx950), 288 GiB each, single node"
+        }
+      }
+    ],
+    "gaps": [
+      {
+        "title": "Accuracy (GSM8K / AIME25)",
+        "kind": "metric",
+        "note": "Functional correctness spot-checked only (arithmetic, factual recall, reasoning/content split). No eval harness run yet.",
+        "cmd": "# GSM8K (chat + thinking)\npython3 -m sglang.test.run_eval --port 30000 --eval-name gsm8k \\\n  --max-tokens 8192 --temperature 0 --num-examples 1319\n\n# AIME25 - use sgl-eval (NV official harness), NOT in-tree run_eval\npip install git+https://github.com/sgl-project/sgl-eval\nsgl-eval run aime25 --api-key EMPTY --base-url http://localhost:30000/v1 \\\n  --n-repeats 16 --max-tokens 64000 --temperature 1.0 --top-p 0.95 --thinking"
+      },
+      {
+        "title": "Accept-length gap vs #32548 (3.3 vs 5.75)",
+        "kind": "metric",
+        "note": "Workload, sampling temperature and AITER_SITUV2_A8W4 are ruled out; version skew against the Day-0 image is the prime suspect. Re-run the same sweep inside the published image and compare.",
+        "cmd": "docker run -d --name k3-day0 \\\n  --device=/dev/kfd --device=/dev/dri --network=host --ipc=host \\\n  --group-add video --cap-add SYS_PTRACE --shm-size=32g \\\n  -v $HOME/hf-cache:/hf-cache -e HF_HOME=/hf-cache \\\n  lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 sleep infinity\ndocker exec k3-day0 bash /workspace/test_kimi_k3.sh dspark\n\n# then, against the running server:\npython3 -m sglang.bench_serving --backend sglang-oai-chat \\\n  --model moonshotai/Kimi-K3 --dataset-name random \\\n  --random-input-len 1024 --random-output-len 1024 --random-range-ratio 1 \\\n  --num-prompts 16 --max-concurrency 8 --port 30000   # compare 'Accept length'"
+      },
+      {
+        "title": "Long context (up to 1M) and multimodal",
+        "kind": "metric",
+        "note": "Only ISL 1024 measured, text-only. The model advertises a 1,048,576-token window and ships a vision tower.",
+        "cmd": "for IN in 8192 32768 131072; do\n  python3 -m sglang.bench_serving --backend sglang-oai-chat \\\n    --model moonshotai/Kimi-K3 --dataset-name random \\\n    --random-input-len $IN --random-output-len 512 --random-range-ratio 1 \\\n    --num-prompts 2 --max-concurrency 1 --port 30000\ndone"
+      },
+      {
+        "title": "MI300X (gfx942)",
+        "kind": "hardware",
+        "note": "Not attempted. At 194.38 GB/GPU of weights the MXFP4 path does not fit 8x192 GiB, so gfx942 needs more GPUs or a different sharding - and #32548 already reports MI350 running with untuned AITER kernels.",
+        "cmd": "# would need >8 GPUs or multi-node; no verified recipe yet"
+      }
+    ]
+  },
+  {
     "id": "kimi-k2.6",
     "name": "Kimi-K2.6",
     "family": "Moonshot",
