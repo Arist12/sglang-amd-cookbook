@@ -63,6 +63,12 @@
     "--speculative-algorithm": "Speculative decoding algorithm (EAGLE, EAGLE3, NEXTN, NGRAM, DFLASH, DSPARK …).",
     "--speculative-draft-model-path": "Draft model the speculative algorithm proposes with.",
     "--speculative-num-draft-tokens": "Draft tokens proposed per step; the target verifies this many at once.",
+    "--speculative-dspark-block-size": "DSPARK draft block size (gamma). The verify window is gamma+1, so this sets --speculative-num-draft-tokens implicitly — set this, not that.",
+    "--mamba-radix-cache-strategy": "How prefix caching stores linear-attention (Mamba/GDN/KDA) state: no_buffer, extra_buffer, or extra_buffer_lazy. Costs state slots per request, which caps the runnable batch.",
+    "--mamba-ssm-dtype": "Storage dtype for SSM states in the linear-attention cache — bfloat16 halves the pool at some precision risk.",
+    "--mamba-full-memory-ratio": "Size of the linear-attention state budget relative to the KV cache budget (default 0.9).",
+    "--enable-linear-replayssm-spec": "Replace the speculative verifier's per-draft SSM state snapshots with a per-slot ring plus periodic flush, freeing the verify scratch.",
+    "--schedule-conservativeness": "How cautious the scheduler is about admitting requests; lower admits more, higher retracts less.",
     "--skip-server-warmup": "Skip the warmup forward pass at startup.",
     "--dist-timeout": "Seconds before a distributed collective is considered hung."
   };

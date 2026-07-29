@@ -1,0 +1,38 @@
+[2026-07-29 15:06:37] run dir      /sgl-workspace/workspace/grid_results/20260729_091009
+[2026-07-29 15:06:37] sglang sha   3d35b45f7
+[2026-07-29 15:06:37] deadline     2026-07-29 16:01:37 (55 min from now)
+[2026-07-29 15:06:42] page cache warmed in 5s: 1500 -> 1500 GB cached
+[2026-07-29 15:06:42] ########## P3b DSpark follow-ups, mem-fraction 0.92 ##########
+[2026-07-29 15:06:50] launch p3b-g2 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 2'
+[2026-07-29 15:10:05]   ready in 195s: max_total_num_tokens=1586556 max_running_requests=48 avail=21.51GB mamba_cap=- slots=-
+[2026-07-29 15:10:05]   bench w2 c48 (np=96)
+[2026-07-29 15:14:53]   -> OK total_tps=3305.43 out_tps=367.27 ttft_med=6710.85ms tpot=109.06ms run=46 tok_use=0.27 mamba_use=0.98 q=2 retract=0 retok_div=1.917% (287s)
+/sgl-workspace/workspace/gridlib.sh: line 120: 195328 Killed                  LOG="${GL_SRV_LOG}" setsid bash "${W}/serve-k3-ext.sh" "${mode}" > /dev/null 2>&1
+[2026-07-29 15:15:16] launch p3b-g3-replayssm mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3 --enable-linear-replayssm-spec'
+[2026-07-29 15:18:30]   ready in 194s: max_total_num_tokens=1803795 max_running_requests=48 avail=20.51GB mamba_cap=- slots=-
+[2026-07-29 15:18:30]   bench w2 c48 (np=96)
+[2026-07-29 15:22:57]   -> OK total_tps=3584.12 out_tps=398.24 ttft_med=7711.01ms tpot=100.06ms run=46 tok_use=0.24 mamba_use=0.98 q=3 retract=0 retok_div=1.879% (266s)
+[2026-07-29 15:22:58]   bench w2 c96 (np=192)
+[2026-07-29 15:31:21]   -> OK total_tps=3672.41 out_tps=408.05 ttft_med=121220.48ms tpot=103.53ms run=46 tok_use=0.24 mamba_use=0.98 q=51 retract=0 retok_div=2.827% (502s)
+/sgl-workspace/workspace/gridlib.sh: line 120: 199329 Killed                  LOG="${GL_SRV_LOG}" setsid bash "${W}/serve-k3-ext.sh" "${mode}" > /dev/null 2>&1
+[2026-07-29 15:31:36] ########## P2b no-spec follow-ups, mem-fraction 0.93 ##########
+[2026-07-29 15:31:44] launch p2b-noradix-gsp mode=nospec mem=0.93 radix=0 cg=256 cp=default extra=''
+[2026-07-29 15:34:58]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 15:34:58]   bench w3 c32 (np=256)
+[2026-07-29 15:37:35]   -> OK total_tps=8275.57 out_tps=462.52 ttft_med=5927.67ms tpot=47.33ms run=32 tok_use=0.12 mamba_use=0.06 q=0 retract=0 retok_div=2.96% (156s)
+/sgl-workspace/workspace/gridlib.sh: line 120: 204943 Killed                  LOG="${GL_SRV_LOG}" setsid bash "${W}/serve-k3-ext.sh" "${mode}" > /dev/null 2>&1
+[2026-07-29 15:37:57] launch p2b-base-rep2 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra=''
+[2026-07-29 15:41:11]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 15:41:11]   bench w2 c128 (np=256)
+[2026-07-29 15:46:29]   -> OK total_tps=7896.33 out_tps=877.37 ttft_med=38975.31ms tpot=107.74ms run=128 tok_use=0.92 mamba_use=0.22 q=0 retract=0 retok_div=2.135% (316s)
+/sgl-workspace/workspace/gridlib.sh: line 120: 208638 Killed                  LOG="${GL_SRV_LOG}" setsid bash "${W}/serve-k3-ext.sh" "${mode}" > /dev/null 2>&1
+[2026-07-29 15:46:51] launch p2b-base-rep3 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra=''
+[2026-07-29 15:50:05]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 15:50:05]   bench w2 c128 (np=256)
+[2026-07-29 15:55:22]   -> OK total_tps=7903.34 out_tps=878.15 ttft_med=38953.9ms tpot=107.6ms run=128 tok_use=0.92 mamba_use=0.22 q=0 retract=0 retok_div=1.788% (316s)
+/sgl-workspace/workspace/gridlib.sh: line 120: 212766 Killed                  LOG="${GL_SRV_LOG}" setsid bash "${W}/serve-k3-ext.sh" "${mode}" > /dev/null 2>&1
+[2026-07-29 15:55:36] P3b winner: p3b-g3-replayssm at c96 (3672.41 tok/s)
+[2026-07-29 15:55:36] BUDGET: need 660s, only 361s left -- skipping
+wrote /sgl-workspace/workspace/grid_results/20260729_091009/summary.md
+wrote /sgl-workspace/workspace/grid_results/20260729_091009/report.md
+[2026-07-29 15:55:45] ########## supplements done ##########

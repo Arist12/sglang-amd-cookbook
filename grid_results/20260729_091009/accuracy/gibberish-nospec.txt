@@ -1,0 +1,7 @@
+samples=32
+empty=0
+rep8gram_mean=0.0170
+rep8gram_max=0.2949
+longest_token_run_max=4
+flagged=1
+verdict=FAIL

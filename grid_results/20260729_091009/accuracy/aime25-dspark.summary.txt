@@ -1,0 +1,6 @@
+# tail of aime25-dspark.txt (full transcript not committed: tens of MB)
+* pass@1[avg-of-8]  =  95.42% +/- 3.54% (SEM 1.25%)
+  no_answer         =  0.00%
+  stop_rate         =  100.00%
+  truncated_rate    =  0.00%
+  error_rate        =  0.00%

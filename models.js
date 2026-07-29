@@ -964,7 +964,7 @@ window.MODELS = [
     "bytes_per_param": 1.31,
     "weights_gb": 1561,
     "context_len": "1048576 (measured to 131072)",
-    "summary": "Day-0 bring-up of moonshotai/Kimi-K3 (2.78T total / 105.4B active, hybrid KDA + MLA, 896 routed experts) on 8x MI355X at TP=8, in both the plain and the DSpark speculative-decoding configuration from sgl-project/sglang#32548. Accuracy is at parity between the two and healthy in absolute terms: GSM8K 97.49% / 97.64%, AIME25 pass@1 avg-of-8 93.33% / 94.58% - speculative decoding is lossless, as it should be. Everything else about DSpark is conditional, and the condition is accept length. It doubles single-stream decode on short greedy prompts (51.40 -> 104.00 tok/s, accept 5.95 on GSM8K) and is 1.54x faster over a full GSM8K run; it is 3.45x slower on sampled AIME25 at 48 concurrent (accept ~2.9) and 10x slower at 131k context (accept 1.2), where the plain config holds TPOT almost flat at 22 ms because only 24 of 93 layers carry a growing KV cache. The 1.56 TB checkpoint lands at 194.38 GB/GPU under the aiter MXFP4 path, which is mandatory rather than a tuning knob. Serving DSpark with any non-greedy sampling needs dspark_rocm_renorm.patch, without which the first top_p batch takes the scheduler down on ROCm.",
+    "summary": "Day-0 bring-up of moonshotai/Kimi-K3 (2.78T total / 105.4B active, hybrid KDA + MLA, 896 routed experts) on 8x MI355X at TP=8, in both the plain and the DSpark speculative-decoding configuration from sgl-project/sglang#32548. Accuracy is at parity between the two and healthy in absolute terms: GSM8K 97.49% / 97.64%, AIME25 pass@1 avg-of-8 93.33% / 94.58% - speculative decoding is lossless, as it should be. Everything else about DSpark is conditional, and the condition is accept length. It doubles single-stream decode on short greedy prompts (51.40 -> 104.00 tok/s, accept 5.95 on GSM8K) and is 1.54x faster over a full GSM8K run; it is 3.45x slower on sampled AIME25 at 48 concurrent (accept ~2.9) and 10x slower at 131k context (accept 1.2), where the plain config holds TPOT almost flat at 22 ms because only 24 of 93 layers carry a growing KV cache. The 1.56 TB checkpoint lands at 194.38 GB/GPU under the aiter MXFP4 path, which is mandatory rather than a tuning knob. Serving DSpark with any non-greedy sampling needs dspark_rocm_renorm.patch, without which the first top_p batch takes the scheduler down on ROCm. A launch-parameter search on 2026-07-29 then found the Day-0 recipe was leaving a lot on the table, and two knobs recover almost all of it: --mem-fraction-static 0.93 instead of 0.85 lifts the non-spec KV pool 54% and takes peak throughput from 6198 to 7892 tok/s (+27%, 987 tok/s/GPU at concurrency 128), because 0.85 left 35 GB/GPU idle while the scheduler reported full token usage 0.99 with requests queued; and --speculative-dspark-block-size 3 is worth +68% to DSpark (2142 -> 3606 tok/s) while also cutting median TTFT from 11.2 s to 6.6 s and TPOT from 171 to 100 ms, since halving the verify window from 8 to 4 nearly halves the verify tax while accept length only falls from 3.00 to 2.55. Both are accuracy-neutral (GSM8K 97.489% / 97.641%, AIME25 91.67% / 95.42%). Most of the obvious knobs do nothing: chunked-prefill-size, cuda-graph-max-bs-decode and schedule-conservativeness all measured within noise, and the two mem-fraction values above 0.93 boot cleanly and then die on the first heavy prefill in the aiter MXFP4 fused-MoE stage-2 buffer.",
     "configs": [
       {
         "gfx": "gfx950",
@@ -975,7 +975,7 @@ window.MODELS = [
         "nodes": "single",
         "verified": true,
         "docker_image": "lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727",
-        "launch_python": "export SGLANG_USE_AITER=1\nexport SGLANG_AITER_K3_OPT=1\nexport AITER_FLYDSL_FORCE=1\nexport AITER_SITUV2_A8W4=1\nsglang serve \\\n  --model-path moonshotai/Kimi-K3 \\\n  --trust-remote-code \\\n  --tp 8 \\\n  --attention-backend triton \\\n  --dtype bfloat16 \\\n  --mem-fraction-static 0.85 \\\n  --cuda-graph-max-bs-decode 256 \\\n  --disable-radix-cache \\\n  --reasoning-parser kimi_k3 \\\n  --tool-call-parser kimi_k3 \\\n  --speculative-draft-model-path RadixArk/Kimi-K3-DSpark \\\n  --speculative-algorithm DSPARK \\\n  --host 0.0.0.0 --port 30000",
+        "launch_python": "export SGLANG_USE_AITER=1\nexport SGLANG_AITER_K3_OPT=1\nexport AITER_FLYDSL_FORCE=1\nexport AITER_SITUV2_A8W4=1\nsglang serve \\\n  --model-path moonshotai/Kimi-K3 \\\n  --trust-remote-code \\\n  --tp 8 \\\n  --attention-backend triton \\\n  --dtype bfloat16 \\\n  --mem-fraction-static 0.92 \\\n  --cuda-graph-max-bs-decode 256 \\\n  --disable-radix-cache \\\n  --reasoning-parser kimi_k3 \\\n  --tool-call-parser kimi_k3 \\\n  --speculative-draft-model-path RadixArk/Kimi-K3-DSpark \\\n  --speculative-algorithm DSPARK \\\n  --speculative-dspark-block-size 3 \\\n  --host 0.0.0.0 --port 30000",
         "parallelism": {
           "tp": 8,
           "ep": null,
@@ -1036,6 +1036,18 @@ window.MODELS = [
             "value": "94.58%",
             "note": "pass@1 avg-of-8 via sgl-eval, +/-3.05% (SEM 1.08%), 240 samples; stop_rate 100%, truncated 0%, no_answer 0%, error 0%. Run with --n-repeats 8 --num-threads 48 --max-tokens 64000 --temperature 1.0 --top-p 0.95 --thinking. Wall clock 6779.7 s at 188 tok/s. Requires dspark_rocm_renorm.patch - without it the top_p path takes the server down.",
             "ref": "93.33% +/-4.36% without DSpark - the 1.25 pp gap is 0.7 sigma of the difference, i.e. parity"
+          },
+          {
+            "name": "GSM8K (tuned, block size 3)",
+            "value": "97.641%",
+            "note": "Re-run of the command this cell now ships (--speculative-dspark-block-size 3), identical protocol: n=1319, run_eval --max-tokens 8192 --temperature 0 --num-threads 32. Wall clock 393.1 s at 714.5 tok/s. Gate: grid_results/20260729_091009/accuracy_gate.md.",
+            "ref": "97.64% at the Day-0 default block size - identical to three decimal places"
+          },
+          {
+            "name": "AIME25 (tuned, block size 3)",
+            "value": "95.42%",
+            "note": "pass@1 avg-of-8 via sgl-eval, +/-3.54% (SEM 1.25%), 240 samples; stop_rate 100%, truncated 0%, no_answer 0%, error 0%. Shortening the verify window from 8 to 4 does not cost accuracy - the target still verifies every token - and here it came out slightly above baseline.",
+            "ref": "94.58% +/-3.05% at the Day-0 default block size - the +0.84 pp is well inside 1 sigma"
           }
         ],
         "benchmarks": [
@@ -1043,22 +1055,44 @@ window.MODELS = [
             "isl": 1024,
             "osl": 1024,
             "concurrency": 1,
-            "ttft_ms": 182,
-            "tpot_ms": 9.43,
-            "decode_tok_s": 104.0,
-            "total_tok_s": 208.0,
-            "tok_s_per_gpu": 26.0,
-            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024, accept length 3.32)"
+            "ttft_ms": 178,
+            "tpot_ms": 8.78,
+            "decode_tok_s": 111.58,
+            "total_tok_s": 223.16,
+            "tok_s_per_gpu": 27.9,
+            "source": "kimi_k3_playbook.md section 5.1 (benchmark.serving, random 1024/1024, --speculative-dspark-block-size 3, accept length 2.76; grid_results/20260729_091009 p3-lat-win). Day-0 default block size measured 9.43 ms / 104.0 tok/s here."
+          },
+          {
+            "isl": 1024,
+            "osl": 1024,
+            "concurrency": 4,
+            "ttft_ms": 423,
+            "tpot_ms": 11.74,
+            "decode_tok_s": 289.14,
+            "total_tok_s": 578.28,
+            "tok_s_per_gpu": 72.3,
+            "source": "kimi_k3_playbook.md section 5.1 (block size 3, accept length 2.68). Day-0 default: 14.55 ms / 253.84 tok/s."
           },
           {
             "isl": 1024,
             "osl": 1024,
             "concurrency": 8,
-            "ttft_ms": 669,
-            "tpot_ms": 18.27,
-            "total_tok_s": 758.03,
-            "tok_s_per_gpu": 94.8,
-            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024, accept length 3.26)"
+            "ttft_ms": 638,
+            "tpot_ms": 15.25,
+            "decode_tok_s": 470.72,
+            "total_tok_s": 941.44,
+            "tok_s_per_gpu": 117.7,
+            "source": "kimi_k3_playbook.md section 5.1 (block size 3, accept length 2.61). Day-0 default: 18.37 ms / 382.87 tok/s."
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 48,
+            "ttft_ms": 6569,
+            "tpot_ms": 100.05,
+            "total_tok_s": 3606.12,
+            "tok_s_per_gpu": 450.8,
+            "source": "kimi_k3_playbook.md section 5.1 (benchmark.serving, random 8192/1024, mem-fraction 0.92 + block size 3, accept length 2.55; grid_results/20260729_091009 p3-g3). Day-0 default block size on the identical workload: 2142.48 tok/s at 11249 ms TTFT."
           },
           {
             "isl": 1024,
@@ -1068,7 +1102,7 @@ window.MODELS = [
             "tpot_ms": 40.09,
             "total_tok_s": 1338.66,
             "tok_s_per_gpu": 167.3,
-            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024, accept length 3.26)"
+            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024, accept length 3.26) - measured at the Day-0 default block size, not the block size 3 this cell now ships"
           },
           {
             "isl": 8192,
@@ -1108,6 +1142,10 @@ window.MODELS = [
           "The draft-worker verify CUDA graph captures num_tokens_per_req=7 while the runner reports verify_num_draft_tokens=8. That is by design - SpeculativeAlgorithm.get_num_tokens_per_req_for_target_verify returns num_draft_tokens - 1 for the DSpark draft worker - not a mis-sized window.",
           "ROCm backend fallbacks are otherwise correct and silent: is_sm100_supported() is false so the trtllm_mha draft default never applies (it overrides to triton), and the nv_cutedsl verify backend that kimi_k3_hook.py pins unconditionally resolves to the triton KDA kernel off CUDA, with the fused DSpark CuTe MTP path gated behind is_cuda().",
           "DSpark cuts max_running_requests to 48 (from 368) and the KV pool to 14.02 GB / 544,533 tokens, paying for draft weights, a second CUDA-graph set and the 8-wide verify window.",
+          "--speculative-dspark-block-size 3 is the single biggest win on this page and it is not a trade: +68% throughput (2142 -> 3606 tok/s at concurrency 48, ISL 8192/OSL 1024) while median TTFT drops from 11249 to 6569 ms and TPOT from 170.98 to 100.05 ms, and it wins the latency probe at every concurrency too (TPOT 8.78 / 11.74 / 15.25 ms at 1 / 4 / 8 against 9.84 / 14.55 / 18.37 for the default). The mechanism is the verify tax: at accept length a, each accepted token costs window/a target token-slots, and halving the window from 8 to 4 nearly halves the tax while accept length only falls from 3.00 to 2.55. It also frees memory, since the intermediate SSM verify scratch shrinks - the KV pool goes from 1,174,618 to 1,504,168 tokens at the same mem-fraction.",
+          "The block-size curve is a step, not a slope, so 3 is a genuine interior optimum rather than 'smaller is better'. At concurrency 48: block size 2 gives 3305 tok/s, 3 gives 3606, 5 gives 2118 and the default 7 gives 2142. Sizes 5 and 7 are indistinguishable; below 3 the window is too short to amortise a step. Never set --speculative-num-draft-tokens directly, it is asserted to equal block size + 1 and setting it independently fails at boot.",
+          "--mem-fraction-static 0.92 for this cell, one step below the non-spec cell's 0.93, because the draft weights and verify window add activation pressure - 0.93 boots and then dies under a heavy prefill. 0.92 lifts the KV pool from 551,629 to 1,174,618 tokens (+113%). Note that DSpark barely uses it: KV usage runs 0.24-0.36 at concurrency 48 while mamba usage sits at 0.98, so this lane is bounded by the KDA state pool, not by KV. That is also why raising --max-running-requests does not help.",
+          "Two DSpark knobs that look like wins and are not. --max-running-requests 16-40 appears to buy up to +52% throughput (3265 tok/s at 24 vs 2142 at 48), but holding everything else fixed shows the mechanism: at 24 with 48 clients offered, 27 requests sit in the queue and median TTFT is 70 s. The server is not faster, it is serving fewer people. --enable-linear-replayssm-spec genuinely cuts median TTFT from 11249 to 3168 ms on its own with throughput flat, but once block size 3 is set it adds nothing (3584 vs 3606 tok/s) and slightly worsens TTFT, so it stays out of the recipe.",
           "The four AITER env vars are load-bearing, not tuning knobs. Without them the routed experts unpack from MXFP4 and target weights go 194.38 -> 249.29 GB/GPU; the server then dies in _profile_available_bytes with 'Loaded weights leave no GPU memory for the KV cache' at --mem-fraction-static 0.85 AND 0.93 alike. No mem-fraction rescues it on a 288 GiB card.",
           "First weight load is disk-bound: ~16 min cold (96 shards, ~25 s/shard). With the page cache warm the same load takes 105 s and the whole boot is ~3 min - budget the first launch, then stop worrying about restarts.",
           "--reasoning-parser kimi_k3 --tool-call-parser kimi_k3 split the reasoning trace into reasoning_content. Without them a short --max-tokens looks like it returns an empty answer, because the budget is spent inside the reasoning block.",
@@ -1118,10 +1156,10 @@ window.MODELS = [
         "provenance": {
           "image": "source build in a ROCm 7.2.0 container - NOT the published Day-0 image lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 (that image takes the identical command and env, but was not what these numbers were measured on)",
           "pr": "sgl-project/sglang#32541 (Kimi-K3 support); #32548 (AMD Day-0 recipe)",
-          "sglang": "DarkSharpness/sglang-kimi @ amd/kimi-k3 533bff471 + dspark_rocm_renorm.patch, reports 0.5.15.post1.dev20260723+g6c9fd0adc5",
+          "sglang": "DarkSharpness/sglang-kimi @ amd/kimi-k3 533bff471 + dspark_rocm_renorm.patch, reports 0.5.15.post1.dev20260723+g6c9fd0adc5; the parameter-search rows are from 3d35b45f7 on the same branch",
           "aiter": "k3-for-amd 68e42f5f",
           "rocm": "7.2.0 (torch 2.9.1+rocm7.2.0)",
-          "date": "2026-07-28",
+          "date": "2026-07-28 (Day-0 bring-up) and 2026-07-29 (launch-parameter search: mem-fraction, chunked prefill, cuda-graph batch, radix strategy, DSpark block size; raw rows in grid_results/20260729_091009/results.csv)",
           "node": "8x AMD Instinct MI355X (gfx950), 288 GiB each, single node"
         }
       },
@@ -1134,7 +1172,7 @@ window.MODELS = [
         "nodes": "single",
         "verified": true,
         "docker_image": "lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727",
-        "launch_python": "export SGLANG_USE_AITER=1\nexport SGLANG_AITER_K3_OPT=1\nexport AITER_FLYDSL_FORCE=1\nexport AITER_SITUV2_A8W4=1\nsglang serve \\\n  --model-path moonshotai/Kimi-K3 \\\n  --trust-remote-code \\\n  --tp 8 \\\n  --attention-backend triton \\\n  --dtype bfloat16 \\\n  --mem-fraction-static 0.85 \\\n  --cuda-graph-max-bs-decode 256 \\\n  --disable-radix-cache \\\n  --reasoning-parser kimi_k3 \\\n  --tool-call-parser kimi_k3 \\\n  --host 0.0.0.0 --port 30000",
+        "launch_python": "export SGLANG_USE_AITER=1\nexport SGLANG_AITER_K3_OPT=1\nexport AITER_FLYDSL_FORCE=1\nexport AITER_SITUV2_A8W4=1\nsglang serve \\\n  --model-path moonshotai/Kimi-K3 \\\n  --trust-remote-code \\\n  --tp 8 \\\n  --attention-backend triton \\\n  --dtype bfloat16 \\\n  --mem-fraction-static 0.93 \\\n  --cuda-graph-max-bs-decode 256 \\\n  --disable-radix-cache \\\n  --reasoning-parser kimi_k3 \\\n  --tool-call-parser kimi_k3 \\\n  --host 0.0.0.0 --port 30000",
         "parallelism": {
           "tp": 8,
           "ep": null,
@@ -1195,6 +1233,18 @@ window.MODELS = [
             "value": "93.33%",
             "note": "pass@1 avg-of-8 via sgl-eval, +/-4.36% (SEM 1.54%), 240 samples; stop_rate 100%, truncated 0%, no_answer 0%, error 0%. Same flags as the DSpark cell. Wall clock 1964.1 s at 692 tok/s - 3.45x faster than the DSpark cell on this workload.",
             "ref": "94.58% +/-3.05% with DSpark - parity within 0.7 sigma"
+          },
+          {
+            "name": "GSM8K (tuned, mem-fraction 0.93)",
+            "value": "97.489%",
+            "note": "Re-run at mem-fraction 0.93 plus the opt-in --mamba-ssm-dtype bfloat16, identical protocol: n=1319, run_eval --max-tokens 8192 --temperature 0 --num-threads 32. Wall clock 580.7 s at 480.7 tok/s. Gate: grid_results/20260729_091009/accuracy_gate.md.",
+            "ref": "97.49% at Day-0 settings - identical to three decimal places"
+          },
+          {
+            "name": "AIME25 (tuned, mem-fraction 0.93)",
+            "value": "91.67%",
+            "note": "pass@1 avg-of-8 via sgl-eval, +/-3.09% (SEM 1.09%), 240 samples; stop_rate 99.17%, truncated 0.83%, no_answer 0.83%, error 0%. Measured with the opt-in --mamba-ssm-dtype bfloat16 in place. The -1.66 pp delta is 0.88 sigma of the pooled SEM, so not a detectable regression, but it is the largest delta in the gate and this is the only config that lost samples to truncation - which is why the shipped command in this cell leaves the bfloat16 SSM knob out and keeps only the memory change.",
+            "ref": "93.33% +/-4.36% at Day-0 settings - inside 1 sigma"
           }
         ],
         "benchmarks": [
@@ -1255,12 +1305,56 @@ window.MODELS = [
             "tpot_ms": 22.13,
             "decode_tok_s": 45.2,
             "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, no speculative decoding)"
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 96,
+            "ttft_ms": 29530,
+            "tpot_ms": 92.87,
+            "total_tok_s": 7094.1,
+            "tok_s_per_gpu": 886.8,
+            "source": "kimi_k3_playbook.md section 5.1 (benchmark.serving, random 8192/1024, mem-fraction 0.93; grid_results/20260729_091009 p2-base-mf0.93)"
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 128,
+            "ttft_ms": 39005,
+            "tpot_ms": 108.05,
+            "total_tok_s": 7891.8,
+            "tok_s_per_gpu": 986.5,
+            "source": "kimi_k3_playbook.md section 5.1 (benchmark.serving, random 8192/1024, mem-fraction 0.93; three-run mean of 7875.74/7896.33/7903.34, +/-0.35%). Saturation point: KV use 0.92 with zero queueing."
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 160,
+            "ttft_ms": 48425,
+            "tpot_ms": 116.97,
+            "total_tok_s": 7044.08,
+            "tok_s_per_gpu": 880.5,
+            "source": "kimi_k3_playbook.md section 5.1 (past saturation: KV use 0.99, 22 queued, running pinned at 138)"
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 192,
+            "ttft_ms": 60714,
+            "tpot_ms": 119.6,
+            "total_tok_s": 7352.29,
+            "tok_s_per_gpu": 919.0,
+            "source": "kimi_k3_playbook.md section 5.1 (past saturation: KV use 0.99, 54 queued, running pinned at 138)"
           }
         ],
         "vs_nvidia": [],
         "gotchas": [
           "Turn DSpark OFF for long context - this is the sharpest knob on the page. Single-stream TPOT runs 9.43 / 15.20 / 48.93 / 221.49 ms at 1k / 8k / 32k / 131k input with DSpark, against 19.28 / 19.54 / 20.41 / 22.13 ms without it. The plain config is almost flat because only 24 of 93 layers carry a growing KV cache - the other 69 are constant-state KDA - so a 128x longer prompt costs 15% more per token. DSpark inverts from 2x faster to 10x slower over the same range because accept length collapses to 1.18-1.32 at 131k (accept rate 0.03): the 5-layer dense draft model cannot track that much context, so every step pays 8 target token-slots to land ~1.2 tokens. TTFT is unaffected either way (23.96 s vs 24.03 s at 131k) - speculative decoding does not touch prefill.",
           "This is the throughput answer whenever the batch is full or the traffic is sampled rather than greedy: 1695.74 vs DSpark's 1338.66 tok/s at concurrency 32 on the synthetic sweep, and 3.45x faster wall clock on the real AIME25 run (1964.1 s / 692 tok/s vs 6779.7 s / 188 tok/s). It also keeps max_running_requests at 368 with a 21.35 GB / 829,332-token KV pool. Below ~concurrency 8, or on greedy structured workloads like GSM8K, DSpark wins instead - see the low-latency cell.",
+          "--mem-fraction-static 0.93, not the Day-0 0.85, and operate at concurrency 128. The Day-0 setting left 35.13 GB/GPU free after graph capture while the scheduler simultaneously reported full token usage 0.99 with requests queued - the KV pool was full and under-allocated at the same time. 0.93 lifts it from 838,048 to 1,292,032 tokens (+54%) and moves peak throughput from 6198 tok/s at concurrency 96 to 7892 tok/s at 128, i.e. +27% and 987 tok/s/GPU, reproduced across three runs at +/-0.35%. Read running/queued together to see the new ceiling: 128 is the largest batch the pool holds outright, and past it running pins at 138 while the queue grows, so extra clients buy latency rather than throughput.",
+          "Do NOT raise --mem-fraction-static past 0.93 on this model, and do not validate a memory change with a boot check. 0.94 (9.35 GB free) and 0.95 (6.45 GB free) both start cleanly, serve /health and print a plausible available_gpu_mem, then die on the first heavy prefill. The allocation that fails is not attention but the aiter MXFP4 fused-MoE stage-2 output buffer: 'torch.OutOfMemoryError: HIP out of memory. Tried to allocate 1.75 GiB' from flydsl_moe_stage2. That buffer scales with tokens per forward pass, so it peaks at --chunked-prefill-size rather than at batch size, and K3's safe floor here is ~12 GB free after capture - well above the 5-8 GB the generic SGLang tuning guide suggests. Any mem-fraction or chunked-prefill change needs a real long-prefill load test.",
+          "The knobs that did nothing, measured at concurrency 128 against a 7876 tok/s baseline, so you can skip them: --chunked-prefill-size 32768 and 65536 gave +0.2% (noise) and 8192 gave -6.8%, so the 16384 default is already right and TTFT at saturation is queueing rather than chunk size; --cuda-graph-max-bs-decode 384 gave exactly 0% (the running ceiling is 138, so 256 already covers every replayed batch) and 512 crashed by dropping headroom under the floor above; --schedule-conservativeness 0.6 gave 0% because the tuned config never retracts and never queues at 128. --mamba-ssm-dtype bfloat16 is the one real extra, worth +1.24% (7892 -> 7990, three runs each with non-overlapping ranges) and it doubles max_running_requests from 570 to 1104, but it changes SSM state precision and is deliberately left out of the shipped command - 1% is not worth a numerics knob unless you re-run your own accuracy gate. Ours passed: GSM8K 97.489% against the 97.49% baseline.",
+          "If your traffic has shared prefixes, drop --disable-radix-cache and add --mamba-radix-cache-strategy extra_buffer_lazy. On generated-shared-prefix (32 groups x 8 prompts, 4K shared system prompt, concurrency 32) that is 12,561 vs 8,276 tok/s - 1.52x, 68.2% cache hit - and it costs only 0.8% on traffic with no reuse. The default radix strategy reaches the same 1.5x but costs 14.4% on no-reuse traffic, and the reason is a KDA state-slot budget: prefix caching on a hybrid model charges 5 state slots per request under the default strategy versus 4 under extra_buffer_lazy, which drops max_running_requests from 570 to 114 and 142. 114 is below the throughput-optimal batch of 128, so the default strategy starts queueing and loses the 14%, while extra_buffer_lazy still clears 128.",
           "Accuracy matches the DSpark cell (GSM8K 97.49% vs 97.64%, AIME25 93.33% vs 94.58%, both within noise), so the choice between the two cells is purely a throughput/latency one.",
           "The four AITER env vars are load-bearing, not tuning knobs. Without them the routed experts unpack from MXFP4 and target weights go 194.38 -> 249.29 GB/GPU; the server then dies in _profile_available_bytes with 'Loaded weights leave no GPU memory for the KV cache' at --mem-fraction-static 0.85 AND 0.93 alike. No mem-fraction rescues it on a 288 GiB card.",
           "First weight load is disk-bound: ~16 min cold (96 shards, ~25 s/shard). With the page cache warm the same load takes 105 s and the whole boot is ~3 min - budget the first launch, then stop worrying about restarts.",
@@ -1272,10 +1366,10 @@ window.MODELS = [
         "provenance": {
           "image": "source build in a ROCm 7.2.0 container - NOT the published Day-0 image lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 (that image takes the identical command and env, but was not what these numbers were measured on)",
           "pr": "sgl-project/sglang#32541 (Kimi-K3 support); #32548 (AMD Day-0 recipe)",
-          "sglang": "DarkSharpness/sglang-kimi @ amd/kimi-k3 533bff471 + dspark_rocm_renorm.patch, reports 0.5.15.post1.dev20260723+g6c9fd0adc5",
+          "sglang": "DarkSharpness/sglang-kimi @ amd/kimi-k3 533bff471 + dspark_rocm_renorm.patch, reports 0.5.15.post1.dev20260723+g6c9fd0adc5; the parameter-search rows are from 3d35b45f7 on the same branch",
           "aiter": "k3-for-amd 68e42f5f",
           "rocm": "7.2.0 (torch 2.9.1+rocm7.2.0)",
-          "date": "2026-07-28",
+          "date": "2026-07-28 (Day-0 bring-up) and 2026-07-29 (launch-parameter search: mem-fraction, chunked prefill, cuda-graph batch, radix strategy, DSpark block size; raw rows in grid_results/20260729_091009/results.csv)",
           "node": "8x AMD Instinct MI355X (gfx950), 288 GiB each, single node"
         }
       }

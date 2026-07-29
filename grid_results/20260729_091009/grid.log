@@ -1,0 +1,269 @@
+[2026-07-29 09:10:09] run dir      /sgl-workspace/workspace/grid_results/20260729_091009
+[2026-07-29 09:10:09] sglang sha   3d35b45f7
+[2026-07-29 09:10:09] deadline     2026-07-29 16:40:09 (450 min from now)
+[2026-07-29 09:10:14] page cache warmed in 5s: 1499 -> 1499 GB cached
+[2026-07-29 09:10:14] === P1 nospec: anchor probe at mem-fraction 0.85 ===
+[2026-07-29 09:10:22] launch p1-nospec-mf0.85 mode=nospec mem=0.85 radix=0 cg=256 cp=default extra=''
+[2026-07-29 09:13:36]   ready in 194s: max_total_num_tokens=838048 max_running_requests=370 avail=35.13GB mamba_cap=370 slots=1
+[2026-07-29 09:13:36]   bench stress c96 (np=96)
+[2026-07-29 09:16:44]   -> OK total_tps=9390.2 out_tps=144.46 ttft_med=72409.92ms tpot=183.52ms run=46 tok_use=1 mamba_use=0.14 q=46 retract=0 retok_div=0.484% (187s)
+[2026-07-29 09:16:58] === P1 nospec: anchor avail=35.13GB -> predicted mem-fraction 0.95 ===
+[2026-07-29 09:17:06] launch p1-nospec-mf0.95 mode=nospec mem=0.95 radix=0 cg=256 cp=default extra=''
+[2026-07-29 09:20:20]   ready in 194s: max_total_num_tokens=1405528 max_running_requests=620 avail=6.45GB mamba_cap=620 slots=1
+[2026-07-29 09:20:20]   bench stress c96 (np=96)
+[2026-07-29 09:20:38]   SERVER DIED during stress c96
+[2026-07-29 09:20:38]   -> CRASH total_tps=NA out_tps=NA ttft_med=NAms tpot=NAms run=NA tok_use=NA mamba_use=NA q=NA retract=0 retok_div=NA% (18s)
+[2026-07-29 09:20:38]   server gone, abandoning remaining points
+[2026-07-29 09:20:46]   REJECT mf=0.95: status=CRASH
+[2026-07-29 09:20:54] launch p1-nospec-mf0.94 mode=nospec mem=0.94 radix=0 cg=256 cp=default extra=''
+[2026-07-29 09:24:09]   ready in 195s: max_total_num_tokens=1348780 max_running_requests=595 avail=9.35GB mamba_cap=595 slots=1
+[2026-07-29 09:24:09]   bench stress c96 (np=96)
+[2026-07-29 09:25:30]   SERVER DIED during stress c96
+[2026-07-29 09:25:30]   -> CRASH total_tps=NA out_tps=NA ttft_med=NAms tpot=NAms run=NA tok_use=NA mamba_use=NA q=NA retract=0 retok_div=NA% (81s)
+[2026-07-29 09:25:30]   server gone, abandoning remaining points
+[2026-07-29 09:25:43]   REJECT mf=0.94: status=CRASH
+[2026-07-29 09:25:51] launch p1-nospec-mf0.93 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra=''
+[2026-07-29 09:29:05]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 09:29:05]   bench stress c96 (np=96)
+[2026-07-29 09:32:09]   -> OK total_tps=9572.5 out_tps=147.27 ttft_med=72095.07ms tpot=236.37ms run=19 tok_use=0.99 mamba_use=0.14 q=19 retract=0 retok_div=0.476% (183s)
+[2026-07-29 09:32:23] SKIP p1-nospec-mf0.94 (already recorded)
+[2026-07-29 09:32:24]   REJECT mf=0.94: status=CRASH
+[2026-07-29 09:32:24] === P1 nospec: WINNER mem-fraction 0.93 (avail=12.21GB) ===
+[2026-07-29 09:32:24] === P1 dspark: anchor probe at mem-fraction 0.85 ===
+[2026-07-29 09:32:32] launch p1-dspark-mf0.85 mode=dspark mem=0.85 radix=0 cg=256 cp=default extra=''
+[2026-07-29 09:35:46]   ready in 194s: max_total_num_tokens=551629 max_running_requests=48 avail=30.38GB mamba_cap=- slots=-
+[2026-07-29 09:35:46]   bench stress c48 (np=48)
+[2026-07-29 09:38:43]   -> OK total_tps=4978.81 out_tps=76.6 ttft_med=40610.84ms tpot=301.36ms run=16 tok_use=0.96 mamba_use=0.67 q=16 retract=0 retok_div=0.724% (176s)
+[2026-07-29 09:38:57] === P1 dspark: anchor avail=30.38GB -> predicted mem-fraction 0.93 ===
+[2026-07-29 09:39:05] launch p1-dspark-mf0.93 mode=dspark mem=0.93 radix=0 cg=256 cp=default extra=''
+[2026-07-29 09:42:20]   ready in 195s: max_total_num_tokens=1263617 max_running_requests=48 avail=10.30GB mamba_cap=- slots=-
+[2026-07-29 09:42:20]   bench stress c48 (np=48)
+[2026-07-29 09:43:43]   SERVER DIED during stress c48
+[2026-07-29 09:43:43]   -> CRASH total_tps=NA out_tps=NA ttft_med=NAms tpot=NAms run=NA tok_use=NA mamba_use=NA q=NA retract=0 retok_div=NA% (83s)
+[2026-07-29 09:43:43]   server gone, abandoning remaining points
+[2026-07-29 09:43:56]   REJECT mf=0.93: status=CRASH
+[2026-07-29 09:44:04] launch p1-dspark-mf0.92 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra=''
+[2026-07-29 09:47:18]   ready in 194s: max_total_num_tokens=1174618 max_running_requests=48 avail=12.81GB mamba_cap=- slots=-
+[2026-07-29 09:47:18]   bench stress c48 (np=48)
+[2026-07-29 09:50:15]   -> OK total_tps=5025.53 out_tps=77.32 ttft_med=40515.06ms tpot=429.32ms run=24 tok_use=0.66 mamba_use=0.98 q=1 retract=0 retok_div=0.439% (175s)
+[2026-07-29 09:50:29] SKIP p1-dspark-mf0.93 (already recorded)
+[2026-07-29 09:50:29]   REJECT mf=0.93: status=CRASH
+[2026-07-29 09:50:29] SKIP p1-dspark-mf0.92 (already recorded)
+[2026-07-29 09:50:29] === P1 dspark: WINNER mem-fraction 0.92 (avail=12.81GB) ===
+[2026-07-29 09:50:29] ########## P2 no-spec lane, mem-fraction 0.93 ##########
+[2026-07-29 09:50:37] launch p2-base-mf0.93 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra=''
+[2026-07-29 09:53:51]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 09:53:51]   bench w2 c96 (np=192)
+[2026-07-29 09:58:19]   -> OK total_tps=7094.1 out_tps=788.23 ttft_med=29530.24ms tpot=92.87ms run=96 tok_use=0.69 mamba_use=0.17 q=0 retract=0 retok_div=2.25% (267s)
+[2026-07-29 09:58:20]   bench w2 c128 (np=256)
+[2026-07-29 10:03:38]   -> OK total_tps=7875.74 out_tps=875.08 ttft_med=39005.09ms tpot=108.05ms run=128 tok_use=0.92 mamba_use=0.22 q=0 retract=0 retok_div=2.204% (317s)
+[2026-07-29 10:03:39]   bench w2 c160 (np=320)
+[2026-07-29 10:10:56]   -> OK total_tps=7044.08 out_tps=782.68 ttft_med=48425.12ms tpot=116.97ms run=138 tok_use=0.99 mamba_use=0.24 q=22 retract=0 retok_div=2.057% (436s)
+[2026-07-29 10:10:57]   bench w2 c192 (np=384)
+[2026-07-29 10:19:17]   -> OK total_tps=7352.29 out_tps=816.92 ttft_med=60714.27ms tpot=119.6ms run=138 tok_use=0.99 mamba_use=0.24 q=54 retract=0 retok_div=2.132% (499s)
+[2026-07-29 10:19:32] P2 best concurrency so far: 128
+[2026-07-29 10:19:40] launch p2-cp8192 mode=nospec mem=0.93 radix=0 cg=256 cp=8192 extra=''
+[2026-07-29 10:22:54]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 10:22:54]   bench w2 c128 (np=256)
+[2026-07-29 10:28:34]   -> OK total_tps=7342.14 out_tps=815.79 ttft_med=43965ms tpot=113.6ms run=128 tok_use=0.92 mamba_use=0.22 q=0 retract=0 retok_div=1.885% (339s)
+[2026-07-29 10:28:57] launch p2-cp32768 mode=nospec mem=0.93 radix=0 cg=256 cp=32768 extra=''
+[2026-07-29 10:32:11]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 10:32:11]   bench w2 c128 (np=256)
+[2026-07-29 10:37:31]   -> OK total_tps=7892.63 out_tps=876.96 ttft_med=39388.98ms tpot=107.93ms run=128 tok_use=0.92 mamba_use=0.22 q=0 retract=0 retok_div=2.555% (319s)
+[2026-07-29 10:37:54] launch p2-cp65536 mode=nospec mem=0.93 radix=0 cg=256 cp=65536 extra=''
+[2026-07-29 10:41:08]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 10:41:08]   bench w2 c128 (np=256)
+[2026-07-29 10:46:26]   -> OK total_tps=7890.12 out_tps=876.68 ttft_med=39142.88ms tpot=107.95ms run=128 tok_use=0.92 mamba_use=0.22 q=0 retract=0 retok_div=2.163% (317s)
+[2026-07-29 10:46:48] launch p2-cg384 mode=nospec mem=0.93 radix=0 cg=384 cp=default extra=''
+[2026-07-29 10:50:03]   ready in 195s: max_total_num_tokens=1292032 max_running_requests=570 avail=10.08GB mamba_cap=570 slots=1
+[2026-07-29 10:50:03]   bench w2 c128 (np=256)
+[2026-07-29 10:55:21]   -> OK total_tps=7873.68 out_tps=874.85 ttft_med=39099.59ms tpot=107.9ms run=128 tok_use=0.92 mamba_use=0.22 q=0 retract=0 retok_div=1.997% (317s)
+[2026-07-29 10:55:43] launch p2-cg512 mode=nospec mem=0.93 radix=0 cg=512 cp=default extra=''
+[2026-07-29 10:59:08]   ready in 205s: max_total_num_tokens=1292032 max_running_requests=570 avail=8.12GB mamba_cap=570 slots=1
+[2026-07-29 10:59:08]   bench w2 c128 (np=256)
+[2026-07-29 11:00:28]   SERVER DIED during w2 c128
+[2026-07-29 11:00:28]   -> CRASH total_tps=NA out_tps=NA ttft_med=NAms tpot=NAms run=NA tok_use=NA mamba_use=NA q=NA retract=0 retok_div=NA% (80s)
+[2026-07-29 11:00:28]   server gone, abandoning remaining points
+[2026-07-29 11:00:44] launch p2-radix-default mode=nospec mem=0.93 radix=1 cg=256 cp=default extra=''
+[2026-07-29 11:03:48]   ready in 184s: max_total_num_tokens=1292032 max_running_requests=114 avail=16.36GB mamba_cap=570 slots=5
+[2026-07-29 11:03:48]   bench w2 c128 (np=256)
+[2026-07-29 11:09:57]   -> OK total_tps=6737.52 out_tps=748.61 ttft_med=39503.43ms tpot=100.79ms run=113 tok_use=0.81 mamba_use=0.79 q=15 retract=0 retok_div=2.538% (368s)
+[2026-07-29 11:09:58]   bench w3 c32 (np=256)
+[2026-07-29 11:11:48]   -> OK total_tps=12470.67 out_tps=696.99 ttft_med=1741.83ms tpot=36.25ms run=32 tok_use=0.09 mamba_use=0.22 q=0 retract=0 retok_div=3.033% (109s)
+[2026-07-29 11:12:10] launch p2-radix-lazy mode=nospec mem=0.93 radix=1 cg=256 cp=default extra='--mamba-radix-cache-strategy extra_buffer_lazy'
+[2026-07-29 11:15:14]   ready in 184s: max_total_num_tokens=1292032 max_running_requests=142 avail=15.82GB mamba_cap=570 slots=4
+[2026-07-29 11:15:14]   bench w2 c128 (np=256)
+[2026-07-29 11:20:35]   -> OK total_tps=7812.98 out_tps=868.11 ttft_med=39380.22ms tpot=109.08ms run=128 tok_use=0.92 mamba_use=0.67 q=0 retract=0 retok_div=1.76% (319s)
+[2026-07-29 11:20:36]   bench w3 c32 (np=256)
+[2026-07-29 11:22:24]   -> OK total_tps=12560.81 out_tps=702.03 ttft_med=1497.04ms tpot=36.16ms run=32 tok_use=0.09 mamba_use=0.17 q=0 retract=0 retok_div=2.963% (107s)
+[2026-07-29 11:22:47] launch p2-ssmbf16 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16'
+[2026-07-29 11:26:01]   ready in 194s: max_total_num_tokens=1291496 max_running_requests=1104 avail=10.11GB mamba_cap=1104 slots=1
+[2026-07-29 11:26:01]   bench w2 c128 (np=256)
+[2026-07-29 11:31:16]   -> OK total_tps=7977.11 out_tps=886.35 ttft_med=39039.13ms tpot=106.04ms run=128 tok_use=0.92 mamba_use=0.12 q=0 retract=0 retok_div=2.372% (314s)
+[2026-07-29 11:31:30] P2 queued (max 54) without retracting -> probing lower schedule-conservativeness
+[2026-07-29 11:31:38] launch p2-sched0.6 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra='--schedule-conservativeness 0.6'
+[2026-07-29 11:34:52]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 11:34:52]   bench w2 c128 (np=256)
+[2026-07-29 11:40:11]   -> OK total_tps=7866.86 out_tps=874.1 ttft_med=39065.36ms tpot=108.19ms run=128 tok_use=0.92 mamba_use=0.22 q=0 retract=0 retok_div=2.039% (318s)
+[2026-07-29 11:40:25] P2 tuned winner at matched c128: p2-ssmbf16 -- re-checking saturation
+[2026-07-29 11:40:33] launch p2-curve-p2-ssmbf16 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16'
+[2026-07-29 11:43:48]   ready in 195s: max_total_num_tokens=1291496 max_running_requests=1104 avail=10.11GB mamba_cap=1104 slots=1
+[2026-07-29 11:43:48]   bench w2 c160 (np=320)
+[2026-07-29 11:51:00]   -> OK total_tps=7139.17 out_tps=793.24 ttft_med=48457.14ms tpot=114.86ms run=138 tok_use=0.99 mamba_use=0.12 q=22 retract=0 retok_div=1.723% (431s)
+[2026-07-29 11:51:01]   bench w2 c192 (np=384)
+[2026-07-29 11:59:14]   -> OK total_tps=7452.52 out_tps=828.06 ttft_med=60831.17ms tpot=117.41ms run=138 tok_use=0.99 mamba_use=0.12 q=54 retract=0 retok_div=1.906% (492s)
+[2026-07-29 11:59:28] INCUMBENT[nospec] MEM_FRAC=0.93 RADIX=0 CUDA_GRAPH_MAX_BS=256 CHUNKED_PREFILL=default EXTRA_ARGS=--mamba-ssm-dtype bfloat16 BEST_CONC=128 BEST_TPS=7977.11 BEST_LABEL=p2-ssmbf16
+[2026-07-29 11:59:28] ########## P3 DSpark lane, mem-fraction 0.92 ##########
+[2026-07-29 11:59:36] launch p3-base-mf0.92 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra=''
+[2026-07-29 12:02:51]   ready in 195s: max_total_num_tokens=1174618 max_running_requests=48 avail=12.81GB mamba_cap=- slots=-
+[2026-07-29 12:02:51]   bench w2 c48 (np=96)
+[2026-07-29 12:10:03]   -> OK total_tps=2142.48 out_tps=238.05 ttft_med=11249.6ms tpot=170.98ms run=45 tok_use=0.36 mamba_use=0.98 q=3 retract=0 retok_div=1.757% (431s)
+[2026-07-29 12:10:26] launch p3-mrr16 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--max-running-requests 16'
+[2026-07-29 12:13:31]   ready in 185s: max_total_num_tokens=1658855 max_running_requests=16 avail=20.81GB mamba_cap=- slots=-
+[2026-07-29 12:13:31]   bench w2 c48 (np=96)
+[2026-07-29 12:18:45]   -> OK total_tps=3007.01 out_tps=334.11 ttft_med=96194.75ms tpot=40.45ms run=14 tok_use=0.08 mamba_use=1 q=34 retract=0 retok_div=1.156% (313s)
+[2026-07-29 12:19:07] launch p3-mrr24 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--max-running-requests 24'
+[2026-07-29 12:22:12]   ready in 185s: max_total_num_tokens=1537796 max_running_requests=24 avail=18.88GB mamba_cap=- slots=-
+[2026-07-29 12:22:12]   bench w2 c48 (np=96)
+[2026-07-29 12:27:03]   -> OK total_tps=3264.52 out_tps=362.72 ttft_med=70099.54ms tpot=54.85ms run=21 tok_use=0.13 mamba_use=0.96 q=27 retract=0 retok_div=1.094% (289s)
+[2026-07-29 12:27:25] launch p3-mrr32 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--max-running-requests 32'
+[2026-07-29 12:30:40]   ready in 195s: max_total_num_tokens=1416737 max_running_requests=32 avail=16.83GB mamba_cap=- slots=-
+[2026-07-29 12:30:40]   bench w2 c48 (np=96)
+[2026-07-29 12:37:59]   -> OK total_tps=2109.45 out_tps=234.38 ttft_med=56086.75ms tpot=117.38ms run=30 tok_use=0.2 mamba_use=0.97 q=19 retract=0 retok_div=1.167% (438s)
+[2026-07-29 12:38:22] launch p3-mrr40 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--max-running-requests 40'
+[2026-07-29 12:41:37]   ready in 195s: max_total_num_tokens=1295677 max_running_requests=40 avail=14.98GB mamba_cap=- slots=-
+[2026-07-29 12:41:37]   bench w2 c48 (np=96)
+[2026-07-29 12:48:57]   -> OK total_tps=2106.59 out_tps=234.07 ttft_med=24589.04ms tpot=144.08ms run=37 tok_use=0.27 mamba_use=0.97 q=11 retract=0 retok_div=1.959% (439s)
+[2026-07-29 12:49:19] launch p3-g3 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3'
+[2026-07-29 12:52:34]   ready in 195s: max_total_num_tokens=1504168 max_running_requests=48 avail=19.94GB mamba_cap=- slots=-
+[2026-07-29 12:52:34]   bench w2 c48 (np=96)
+[2026-07-29 12:56:59]   -> OK total_tps=3606.12 out_tps=400.68 ttft_med=6568.96ms tpot=100.05ms run=45 tok_use=0.29 mamba_use=0.98 q=3 retract=0 retok_div=1.586% (264s)
+[2026-07-29 12:57:21] launch p3-g5 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 5'
+[2026-07-29 13:00:36]   ready in 195s: max_total_num_tokens=1339393 max_running_requests=48 avail=16.01GB mamba_cap=- slots=-
+[2026-07-29 13:00:36]   bench w2 c48 (np=96)
+[2026-07-29 13:07:54]   -> OK total_tps=2117.66 out_tps=235.3 ttft_med=10067.27ms tpot=174.73ms run=46 tok_use=0.31 mamba_use=0.98 q=3 retract=0 retok_div=1.537% (437s)
+[2026-07-29 13:08:17] launch p3-replayssm mode=dspark mem=0.85 radix=0 cg=256 cp=default extra='--enable-linear-replayssm-spec --max-running-requests 128'
+[2026-07-29 13:11:32]   ready in 195s: max_total_num_tokens=997441 max_running_requests=128 avail=13.59GB mamba_cap=- slots=-
+[2026-07-29 13:11:32]   bench w2 c48 (np=96)
+[2026-07-29 13:18:45]   -> OK total_tps=2142.53 out_tps=238.06 ttft_med=3168.47ms tpot=175.13ms run=46 tok_use=0.44 mamba_use=0.38 q=0 retract=0 retok_div=1.79% (432s)
+[2026-07-29 13:18:46]   bench w2 c96 (np=192)
+[2026-07-29 13:34:03]   -> OK total_tps=1975.6 out_tps=219.51 ttft_med=4251.14ms tpot=387.91ms run=95 tok_use=0.87 mamba_use=0.75 q=0 retract=0 retok_div=4.028% (916s)
+[2026-07-29 13:34:17] P3 knob winner at matched c48: p3-g3 (3606.12 tok/s)
+[2026-07-29 13:34:25] launch p3-curve-p3-g3 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3'
+[2026-07-29 13:37:39]   ready in 194s: max_total_num_tokens=1504168 max_running_requests=48 avail=19.94GB mamba_cap=- slots=-
+[2026-07-29 13:37:39]   bench w2 c64 (np=128)
+[2026-07-29 13:43:30]   -> OK total_tps=3578.82 out_tps=397.65 ttft_med=25721.65ms tpot=101.74ms run=45 tok_use=0.29 mamba_use=0.98 q=19 retract=0 retok_div=2.264% (350s)
+[2026-07-29 13:43:31]   bench w2 c96 (np=192)
+[2026-07-29 13:51:56]   -> OK total_tps=3657.8 out_tps=406.42 ttft_med=121423.96ms tpot=103.79ms run=45 tok_use=0.28 mamba_use=0.98 q=51 retract=0 retok_div=2.047% (504s)
+[2026-07-29 13:52:10] P3 overall winner: p3-curve-p3-g3 at c96 (3657.8 tok/s)
+[2026-07-29 13:52:18] launch p3-lat-win mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3'
+[2026-07-29 13:55:32]   ready in 194s: max_total_num_tokens=1504168 max_running_requests=48 avail=19.94GB mamba_cap=- slots=-
+[2026-07-29 13:55:32]   bench w1 c1 (np=2)
+[2026-07-29 13:56:06]   -> OK total_tps=223.16 out_tps=111.58 ttft_med=178.48ms tpot=8.78ms run=1 tok_use=0 mamba_use=0.02 q=0 retract=0 retok_div=6.787% (33s)
+[2026-07-29 13:56:07]   bench w1 c4 (np=8)
+[2026-07-29 13:56:51]   -> OK total_tps=578.28 out_tps=289.14 ttft_med=423.29ms tpot=11.74ms run=4 tok_use=0.01 mamba_use=0.08 q=0 retract=0 retok_div=0.537% (43s)
+[2026-07-29 13:56:52]   bench w1 c8 (np=16)
+[2026-07-29 13:57:43]   -> OK total_tps=941.44 out_tps=470.72 ttft_med=638.17ms tpot=15.25ms run=8 tok_use=0.01 mamba_use=0.17 q=0 retract=0 retok_div=1.196% (49s)
+[2026-07-29 13:57:57] INCUMBENT[dspark] MEM_FRAC=0.92 RADIX=0 CUDA_GRAPH_MAX_BS=256 CHUNKED_PREFILL=default EXTRA_ARGS=--speculative-dspark-block-size 3 BEST_CONC=96 BEST_TPS=3657.8 BEST_LABEL=p3-curve-p3-g3
+[2026-07-29 13:58:05] launch p3-lat-base mode=dspark mem=0.92 radix=0 cg=256 cp=default extra=''
+[2026-07-29 14:01:09]   ready in 184s: max_total_num_tokens=1174618 max_running_requests=48 avail=12.81GB mamba_cap=- slots=-
+[2026-07-29 14:01:09]   bench w1 c1 (np=2)
+[2026-07-29 14:01:45]   -> OK total_tps=199.4 out_tps=99.7 ttft_med=181.42ms tpot=9.84ms run=1 tok_use=0 mamba_use=0.02 q=0 retract=0 retok_div=2.832% (35s)
+[2026-07-29 14:01:46]   bench w1 c4 (np=8)
+[2026-07-29 14:02:34]   -> OK total_tps=507.68 out_tps=253.84 ttft_med=433.98ms tpot=14.55ms run=4 tok_use=0.01 mamba_use=0.08 q=0 retract=0 retok_div=0.684% (47s)
+[2026-07-29 14:02:35]   bench w1 c8 (np=16)
+[2026-07-29 14:03:34]   -> OK total_tps=765.73 out_tps=382.87 ttft_med=657.75ms tpot=18.37ms run=8 tok_use=0.01 mamba_use=0.17 q=0 retract=0 retok_div=0.5% (58s)
+[2026-07-29 14:03:48] ########## P4 confirmation ##########
+[2026-07-29 14:03:48] P4 nospec: confirming p2-ssmbf16 at c128 -- MEM_FRAC=0.93 RADIX=0 CUDA_GRAPH_MAX_BS=256 EXTRA_ARGS=--mamba-ssm-dtype bfloat16
+[2026-07-29 14:03:56] launch p4-nospec-rep2 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16'
+[2026-07-29 14:07:11]   ready in 195s: max_total_num_tokens=1291496 max_running_requests=1104 avail=10.11GB mamba_cap=1104 slots=1
+[2026-07-29 14:07:11]   bench w2 c128 (np=256)
+[2026-07-29 14:12:25]   -> OK total_tps=7991.12 out_tps=887.9 ttft_med=39220.96ms tpot=105.76ms run=128 tok_use=0.92 mamba_use=0.12 q=0 retract=0 retok_div=2.422% (313s)
+[2026-07-29 14:12:47] launch p4-nospec-rep3 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16'
+[2026-07-29 14:16:01]   ready in 194s: max_total_num_tokens=1291496 max_running_requests=1104 avail=10.11GB mamba_cap=1104 slots=1
+[2026-07-29 14:16:01]   bench w2 c128 (np=256)
+[2026-07-29 14:21:15]   -> OK total_tps=8001.37 out_tps=889.04 ttft_med=38996.61ms tpot=105.6ms run=128 tok_use=0.92 mamba_use=0.12 q=0 retract=0 retok_div=2.674% (313s)
+[2026-07-29 14:21:29] P4 dspark: confirming p3-curve-p3-g3 at c96 -- MEM_FRAC=0.92 RADIX=0 CUDA_GRAPH_MAX_BS=256 EXTRA_ARGS=--speculative-dspark-block-size 3
+[2026-07-29 14:21:37] launch p4-dspark-rep2 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3'
+[2026-07-29 14:24:52]   ready in 194s: max_total_num_tokens=1504168 max_running_requests=48 avail=19.94GB mamba_cap=- slots=-
+[2026-07-29 14:24:52]   bench w2 c96 (np=192)
+[2026-07-29 14:33:15]   -> OK total_tps=3676.77 out_tps=408.53 ttft_med=118724.77ms tpot=103.09ms run=46 tok_use=0.28 mamba_use=0.98 q=51 retract=0 retok_div=1.45% (501s)
+[2026-07-29 14:33:37] launch p4-dspark-rep3 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3'
+[2026-07-29 14:36:51]   ready in 194s: max_total_num_tokens=1504168 max_running_requests=48 avail=19.94GB mamba_cap=- slots=-
+[2026-07-29 14:36:51]   bench w2 c96 (np=192)
+[2026-07-29 14:45:19]   -> OK total_tps=3638.32 out_tps=404.26 ttft_med=122322.3ms tpot=104.45ms run=46 tok_use=0.28 mamba_use=0.98 q=51 retract=0 retok_div=2.179% (507s)
+[2026-07-29 14:45:33] P4 nospec interaction: p2-ssmbf16 x p2-cp32768
+[2026-07-29 14:45:41] launch p4-nospec-combo mode=nospec mem=0.93 radix=0 cg=256 cp=32768 extra='--mamba-ssm-dtype bfloat16'
+[2026-07-29 14:48:55]   ready in 194s: max_total_num_tokens=1291496 max_running_requests=1104 avail=10.11GB mamba_cap=1104 slots=1
+[2026-07-29 14:48:55]   bench w2 c128 (np=256)
+[2026-07-29 14:54:09]   -> OK total_tps=8012.22 out_tps=890.25 ttft_med=39340.13ms tpot=105.54ms run=128 tok_use=0.92 mamba_use=0.12 q=0 retract=0 retok_div=2.253% (313s)
+[2026-07-29 14:54:23] P4 dspark interaction: p3-curve-p3-g3 x p3-g3
+[2026-07-29 14:54:31] launch p4-dspark-combo mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3'
+[2026-07-29 14:57:45]   ready in 194s: max_total_num_tokens=1504168 max_running_requests=48 avail=19.94GB mamba_cap=- slots=-
+[2026-07-29 14:57:45]   bench w2 c96 (np=192)
+[2026-07-29 15:06:14]   -> OK total_tps=3631.99 out_tps=403.55 ttft_med=120235.15ms tpot=104.03ms run=46 tok_use=0.28 mamba_use=0.98 q=51 retract=0 retok_div=2.298% (508s)
+[2026-07-29 15:06:37] ########## search done, 356 min elapsed ##########
+[2026-07-29 15:06:37] results  /sgl-workspace/workspace/grid_results/20260729_091009/results.csv
+[2026-07-29 15:06:37] summary  /sgl-workspace/workspace/grid_results/20260729_091009/summary.md
+[2026-07-29 15:06:37] run dir      /sgl-workspace/workspace/grid_results/20260729_091009
+[2026-07-29 15:06:37] sglang sha   3d35b45f7
+[2026-07-29 15:06:37] deadline     2026-07-29 16:01:37 (55 min from now)
+[2026-07-29 15:06:42] page cache warmed in 5s: 1500 -> 1500 GB cached
+[2026-07-29 15:06:42] ########## P3b DSpark follow-ups, mem-fraction 0.92 ##########
+[2026-07-29 15:06:50] launch p3b-g2 mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 2'
+[2026-07-29 15:10:05]   ready in 195s: max_total_num_tokens=1586556 max_running_requests=48 avail=21.51GB mamba_cap=- slots=-
+[2026-07-29 15:10:05]   bench w2 c48 (np=96)
+[2026-07-29 15:14:53]   -> OK total_tps=3305.43 out_tps=367.27 ttft_med=6710.85ms tpot=109.06ms run=46 tok_use=0.27 mamba_use=0.98 q=2 retract=0 retok_div=1.917% (287s)
+[2026-07-29 15:15:16] launch p3b-g3-replayssm mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3 --enable-linear-replayssm-spec'
+[2026-07-29 15:18:30]   ready in 194s: max_total_num_tokens=1803795 max_running_requests=48 avail=20.51GB mamba_cap=- slots=-
+[2026-07-29 15:18:30]   bench w2 c48 (np=96)
+[2026-07-29 15:22:57]   -> OK total_tps=3584.12 out_tps=398.24 ttft_med=7711.01ms tpot=100.06ms run=46 tok_use=0.24 mamba_use=0.98 q=3 retract=0 retok_div=1.879% (266s)
+[2026-07-29 15:22:58]   bench w2 c96 (np=192)
+[2026-07-29 15:31:21]   -> OK total_tps=3672.41 out_tps=408.05 ttft_med=121220.48ms tpot=103.53ms run=46 tok_use=0.24 mamba_use=0.98 q=51 retract=0 retok_div=2.827% (502s)
+[2026-07-29 15:31:36] ########## P2b no-spec follow-ups, mem-fraction 0.93 ##########
+[2026-07-29 15:31:44] launch p2b-noradix-gsp mode=nospec mem=0.93 radix=0 cg=256 cp=default extra=''
+[2026-07-29 15:34:58]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 15:34:58]   bench w3 c32 (np=256)
+[2026-07-29 15:37:35]   -> OK total_tps=8275.57 out_tps=462.52 ttft_med=5927.67ms tpot=47.33ms run=32 tok_use=0.12 mamba_use=0.06 q=0 retract=0 retok_div=2.96% (156s)
+[2026-07-29 15:37:57] launch p2b-base-rep2 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra=''
+[2026-07-29 15:41:11]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 15:41:11]   bench w2 c128 (np=256)
+[2026-07-29 15:46:29]   -> OK total_tps=7896.33 out_tps=877.37 ttft_med=38975.31ms tpot=107.74ms run=128 tok_use=0.92 mamba_use=0.22 q=0 retract=0 retok_div=2.135% (316s)
+[2026-07-29 15:46:51] launch p2b-base-rep3 mode=nospec mem=0.93 radix=0 cg=256 cp=default extra=''
+[2026-07-29 15:50:05]   ready in 194s: max_total_num_tokens=1292032 max_running_requests=570 avail=12.21GB mamba_cap=570 slots=1
+[2026-07-29 15:50:05]   bench w2 c128 (np=256)
+[2026-07-29 15:55:22]   -> OK total_tps=7903.34 out_tps=878.15 ttft_med=38953.9ms tpot=107.6ms run=128 tok_use=0.92 mamba_use=0.22 q=0 retract=0 retok_div=1.788% (316s)
+[2026-07-29 15:55:36] P3b winner: p3b-g3-replayssm at c96 (3672.41 tok/s)
+[2026-07-29 15:55:36] BUDGET: need 660s, only 361s left -- skipping
+[2026-07-29 15:55:45] ########## supplements done ##########
+[2026-07-29 15:55:45] run dir      /sgl-workspace/workspace/grid_results/20260729_091009
+[2026-07-29 15:55:45] sglang sha   3d35b45f7
+[2026-07-29 15:55:45] deadline     2026-07-29 21:25:45 (330 min from now)
+[2026-07-29 15:55:50] page cache warmed in 5s: 1500 -> 1500 GB cached
+[2026-07-29 15:55:50] ########## P5 accuracy gate ##########
+[2026-07-29 15:55:50] P5 nospec winner: p2-ssmbf16 (mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16')
+[2026-07-29 15:55:58] launch p5-nospec mode=nospec mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16'
+[2026-07-29 15:59:12]   ready in 194s: max_total_num_tokens=1291496 max_running_requests=1104 avail=10.11GB mamba_cap=1104 slots=1
+[2026-07-29 15:59:12]   GSM8K nospec (n=1319, greedy)
+[2026-07-29 16:09:03]   -> [METRIC] gsm8k_score=0.9748858447488584 labels={"model": "moonshotai/Kimi-K3", "eval": "gsm8k"} {'score:std': np.float64(0.15647183279160218), 'score': np.float64(0.9748858447488584), 'latency': 580.734669849, 'output_throughput': 480.722117163401} 
+[2026-07-29 16:09:03]   gibberish probe nospec
+[2026-07-29 16:10:08]   -> samples=32 empty=0 rep8gram_mean=0.0170 rep8gram_max=0.2949 longest_token_run_max=4 flagged=1 verdict=FAIL 
+[2026-07-29 16:10:22] P5 dspark winner: p3-curve-p3-g3 (mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3')
+[2026-07-29 16:10:30] launch p5-dspark mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3'
+[2026-07-29 16:13:44]   ready in 194s: max_total_num_tokens=1504168 max_running_requests=48 avail=19.94GB mamba_cap=- slots=-
+[2026-07-29 16:13:44]   GSM8K dspark (n=1319, greedy)
+[2026-07-29 16:20:27]   -> [METRIC] gsm8k_score=0.9764079147640792 labels={"model": "moonshotai/Kimi-K3", "eval": "gsm8k"} {'score:std': np.float64(0.15177449967020776), 'score': np.float64(0.9764079147640792), 'latency': 393.081863211999, 'output_throughput': 714.4720382291783} 
+[2026-07-29 16:20:27]   gibberish probe dspark
+[2026-07-29 16:21:17]   -> samples=32 empty=0 rep8gram_mean=0.0205 rep8gram_max=0.2487 rep8gram_p90=0.0294 longest_token_run_max=12 flagged=0 verdict=PASS 
+[2026-07-29 16:21:30] P5 nospec winner: p2-ssmbf16 (mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16')
+[2026-07-29 16:21:38] launch p5-nospec mode=nospec mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16'
+[2026-07-29 16:24:52]   ready in 194s: max_total_num_tokens=1291496 max_running_requests=1104 avail=10.11GB mamba_cap=1104 slots=1
+[2026-07-29 16:24:52]   AIME25 nospec (avg-of-8, max-tokens 64000)
+[2026-07-29 17:03:28]   -> * pass@1[avg-of-8]  =  91.67% +/- 3.09% (SEM 1.09%)   stop_rate         =  99.17%   error_rate        =  0.00% 
+[2026-07-29 17:03:42] P5 dspark winner: p3-curve-p3-g3 (mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3')
+[2026-07-29 17:03:50] launch p5-dspark mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3'
+[2026-07-29 17:07:04]   ready in 194s: max_total_num_tokens=1504168 max_running_requests=48 avail=19.94GB mamba_cap=- slots=-
+[2026-07-29 17:07:04]   AIME25 dspark (avg-of-8, max-tokens 64000)
+[2026-07-29 18:17:22]   -> * pass@1[avg-of-8]  =  95.42% +/- 3.54% (SEM 1.25%)   stop_rate         =  100.00%   error_rate        =  0.00% 
+[2026-07-29 18:17:35] gate written to /sgl-workspace/workspace/grid_results/20260729_091009/accuracy_gate.md
+=== chain complete 2026-07-29T18:17:43+00:00 ===

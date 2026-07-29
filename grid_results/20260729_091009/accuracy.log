@@ -1,0 +1,59 @@
+[2026-07-29 15:55:45] run dir      /sgl-workspace/workspace/grid_results/20260729_091009
+[2026-07-29 15:55:45] sglang sha   3d35b45f7
+[2026-07-29 15:55:45] deadline     2026-07-29 21:25:45 (330 min from now)
+[2026-07-29 15:55:50] page cache warmed in 5s: 1500 -> 1500 GB cached
+[2026-07-29 15:55:50] ########## P5 accuracy gate ##########
+[2026-07-29 15:55:50] P5 nospec winner: p2-ssmbf16 (mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16')
+[2026-07-29 15:55:58] launch p5-nospec mode=nospec mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16'
+[2026-07-29 15:59:12]   ready in 194s: max_total_num_tokens=1291496 max_running_requests=1104 avail=10.11GB mamba_cap=1104 slots=1
+[2026-07-29 15:59:12]   GSM8K nospec (n=1319, greedy)
+[2026-07-29 16:09:03]   -> [METRIC] gsm8k_score=0.9748858447488584 labels={"model": "moonshotai/Kimi-K3", "eval": "gsm8k"} {'score:std': np.float64(0.15647183279160218), 'score': np.float64(0.9748858447488584), 'latency': 580.734669849, 'output_throughput': 480.722117163401} 
+[2026-07-29 16:09:03]   gibberish probe nospec
+[2026-07-29 16:10:08]   -> samples=32 empty=0 rep8gram_mean=0.0170 rep8gram_max=0.2949 longest_token_run_max=4 flagged=1 verdict=FAIL 
+/sgl-workspace/workspace/gridlib.sh: line 120: 217078 Killed                  LOG="${GL_SRV_LOG}" setsid bash "${W}/serve-k3-ext.sh" "${mode}" > /dev/null 2>&1
+[2026-07-29 16:10:22] P5 dspark winner: p3-curve-p3-g3 (mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3')
+[2026-07-29 16:10:30] launch p5-dspark mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3'
+[2026-07-29 16:13:44]   ready in 194s: max_total_num_tokens=1504168 max_running_requests=48 avail=19.94GB mamba_cap=- slots=-
+[2026-07-29 16:13:44]   GSM8K dspark (n=1319, greedy)
+[2026-07-29 16:20:27]   -> [METRIC] gsm8k_score=0.9764079147640792 labels={"model": "moonshotai/Kimi-K3", "eval": "gsm8k"} {'score:std': np.float64(0.15177449967020776), 'score': np.float64(0.9764079147640792), 'latency': 393.081863211999, 'output_throughput': 714.4720382291783} 
+[2026-07-29 16:20:27]   gibberish probe dspark
+[2026-07-29 16:21:17]   -> samples=32 empty=0 rep8gram_mean=0.0205 rep8gram_max=0.2487 rep8gram_p90=0.0294 longest_token_run_max=12 flagged=0 verdict=PASS 
+/sgl-workspace/workspace/gridlib.sh: line 120: 222238 Killed                  LOG="${GL_SRV_LOG}" setsid bash "${W}/serve-k3-ext.sh" "${mode}" > /dev/null 2>&1
+[2026-07-29 16:21:30] P5 nospec winner: p2-ssmbf16 (mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16')
+[2026-07-29 16:21:38] launch p5-nospec mode=nospec mem=0.93 radix=0 cg=256 cp=default extra='--mamba-ssm-dtype bfloat16'
+[2026-07-29 16:24:52]   ready in 194s: max_total_num_tokens=1291496 max_running_requests=1104 avail=10.11GB mamba_cap=1104 slots=1
+[2026-07-29 16:24:52]   AIME25 nospec (avg-of-8, max-tokens 64000)
+[2026-07-29 17:03:28]   -> * pass@1[avg-of-8]  =  91.67% +/- 3.09% (SEM 1.09%)   stop_rate         =  99.17%   error_rate        =  0.00% 
+/sgl-workspace/workspace/gridlib.sh: line 120: 226921 Killed                  LOG="${GL_SRV_LOG}" setsid bash "${W}/serve-k3-ext.sh" "${mode}" > /dev/null 2>&1
+[2026-07-29 17:03:42] P5 dspark winner: p3-curve-p3-g3 (mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3')
+[2026-07-29 17:03:50] launch p5-dspark mode=dspark mem=0.92 radix=0 cg=256 cp=default extra='--speculative-dspark-block-size 3'
+[2026-07-29 17:07:04]   ready in 194s: max_total_num_tokens=1504168 max_running_requests=48 avail=19.94GB mamba_cap=- slots=-
+[2026-07-29 17:07:04]   AIME25 dspark (avg-of-8, max-tokens 64000)
+[2026-07-29 18:17:22]   -> * pass@1[avg-of-8]  =  95.42% +/- 3.54% (SEM 1.25%)   stop_rate         =  100.00%   error_rate        =  0.00% 
+/sgl-workspace/workspace/gridlib.sh: line 120: 236969 Killed                  LOG="${GL_SRV_LOG}" setsid bash "${W}/serve-k3-ext.sh" "${mode}" > /dev/null 2>&1
+[2026-07-29 18:17:35] gate written to /sgl-workspace/workspace/grid_results/20260729_091009/accuracy_gate.md
+# Phase 5 accuracy gate
+
+## lane `nospec`
+
+- GSM8K: **64.00%** vs baseline 97.49% (delta -33.49 pp) -> FAIL
+- AIME25 pass@1 avg-of-8: **8.00%** vs baseline 93.33% (delta -85.33 pp, 1 sigma = 4.36) -> FAIL
+  - stop_rate = 99.17
+  - truncated = 0.83
+  - no_answer = 0.83
+  - error_rate = 0.00
+- degeneration probe: **FAIL** (max n-gram repetition 0.2949)
+
+## lane `dspark`
+
+- GSM8K: **64.00%** vs baseline 97.64% (delta -33.64 pp) -> FAIL
+- AIME25 pass@1 avg-of-8: **8.00%** vs baseline 94.58% (delta -86.58 pp, 1 sigma = 3.05) -> FAIL
+  - stop_rate = 100.00
+  - truncated = 0.00
+  - no_answer = 0.00
+  - error_rate = 0.00
+- degeneration probe: **PASS** (max n-gram repetition 0.2487)
+
+## Verdict
+
+**FAIL** - 5 of 6 checks outside tolerance. Do not publish the affected config as a recommended recipe.

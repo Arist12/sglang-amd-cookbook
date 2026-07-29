@@ -1,0 +1,8 @@
+samples=32
+empty=0
+rep8gram_mean=0.0205
+rep8gram_max=0.2487
+rep8gram_p90=0.0294
+longest_token_run_max=12
+flagged=0
+verdict=PASS

@@ -1,0 +1,6 @@
+# tail of aime25-nospec.txt (full transcript not committed: tens of MB)
+* pass@1[avg-of-8]  =  91.67% +/- 3.09% (SEM 1.09%)
+  no_answer         =  0.83%
+  stop_rate         =  99.17%
+  truncated_rate    =  0.83%
+  error_rate        =  0.00%
