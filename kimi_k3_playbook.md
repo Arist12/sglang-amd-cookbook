@@ -421,6 +421,21 @@ The plain config barely notices: a 128× longer prompt costs 15% more per token.
 That is the hybrid architecture doing its job — only 24 of the 93 layers are
 full MLA and carry a growing KV cache, the other 69 are constant-state KDA.
 
+Aggregate throughput on the same runs, which is what a single long-prompt request
+actually costs the box:
+
+| ISL | non-spec output tok/s | non-spec total tok/s | DSpark output tok/s | DSpark total tok/s |
+|------:|-------:|-------:|-------:|-------:|
+| 8,192 | 48.19 | 819.3 | **60.69** | **1031.8** |
+| 32,768 | **37.70** | **2450.6** | 18.13 | 1178.4 |
+| 131,072 | **14.48** | **3722.4** | 3.73 | 958.6 |
+
+Two things to read off this. The non-spec `total` column *rises* with prompt length
+(819 → 3722 tok/s) purely because prefill dominates a single long request — so a
+prefill-heavy figure quoted without its ISL/OSL is close to meaningless, which is worth
+remembering when comparing against published numbers. And the crossover is visible:
+DSpark leads at 8k and loses by 3.9× at 131k.
+
 DSpark goes the other way, from 2× faster at 1k to 10× slower at 131k, and the
 server log says why: accept length collapses to **1.18–1.32** at 131k, an accept
 rate of 0.03. The draft model is 5 dense MQA layers; it cannot track that much

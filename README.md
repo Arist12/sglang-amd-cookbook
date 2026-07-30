@@ -96,6 +96,26 @@ playbooks, test scripts, `index.html` history, and `grid_results/`. Do **not**
 hand-edit the numbers — update the source playbooks and re-run extraction so every
 value stays source-traced.
 
+One shape constraint the extraction has to respect: a model's `summary` is an
+**array of topic-tagged paragraphs**, one claim per entry, not a single string.
+
+```js
+"summary": [
+  { "text": "…one or two sentences: what this is." },     // no topic — renders as the lede
+  { "topic": "accuracy", "text": "…" },
+  { "topic": "tuning · kv pool", "text": "…" }
+]
+```
+
+A 2,000-character string is still accepted and renders as one paragraph, which is
+exactly the wall this shape exists to prevent — the label rail is what makes a
+summary skimmable. Keep each entry to one claim and its evidence.
+
+The renderer marks up identifiers in prose fields itself (`summary`, `gotchas`,
+env `why`, gap notes): flags, `snake_case` names, file names, `org/repo` paths and
+`#12345` issue refs are set in mono, and `->`, `--`, `~`, `8x` become `→`, `—`,
+`≈`, `8×`. Write those fields as plain ASCII prose; do not hand-wrap them in HTML.
+
 ## Source playbooks
 
 - [Kimi-K3 on MI355X](kimi_k3_playbook.md) — Day-0 hybrid KDA/MLA MoE, MXFP4; plain + DSpark speculative decoding, GSM8K/AIME25 ([`test_kimi_k3.sh`](test_kimi_k3.sh), [`eval_kimi_k3.sh`](eval_kimi_k3.sh)) — plus a tuned recipe worth **+27%** throughput and **+68%** on DSpark, found by the search harness in [`grid_k3/`](grid_k3/README.md)

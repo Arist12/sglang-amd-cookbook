@@ -80,6 +80,72 @@
   function fmt(n, d) { if (n == null || isNaN(n)) return "—"; return Number(n).toLocaleString("en-US", { maximumFractionDigits: d == null ? 1 : d }); }
   function byId(id) { return document.getElementById(id); }
 
+  // ---------------------------------------------------------------- prose typography
+  // Summaries, gotchas and notes are plain strings in models.js, but they are
+  // dense with identifiers: flags, env vars, patch files, PR numbers. Set as
+  // running text they read as one grey mass, so the renderer marks the
+  // identifiers up and fixes the ASCII stand-ins (-> -- ~ 8x) on the way through.
+  var ORGS = ["moonshotai", "zai-org", "Qwen", "sgl-project", "deepseek-ai",
+              "lmsysorg", "rocm", "jhinpan", "JinnP", "RadixArk", "Arist12"];
+
+  // Flags are usually written --like-this, but summaries also name them bare
+  // ("chunked-prefill-size measured within noise"). Take the bare forms from the
+  // glossary so the two never disagree; the length floor keeps ordinary
+  // hyphenated English out.
+  function bareFlagNames() {
+    var seen = {};
+    Object.keys(FLAGS).forEach(function (f) {
+      var bare = f.replace(/^--/, "");
+      if (bare.length >= 12 && bare.indexOf("-") > -1) seen[bare] = 1;
+    });
+    return Object.keys(seen).sort(function (a, b) { return b.length - a.length; });
+  }
+
+  var CODEISH = new RegExp([
+    "`[^`\\n]+`",                                                     // already marked up
+    "--[a-z][\\w-]*",                                                 // --launch-flags
+    "[\\w./-]*[\\w-]\\.(?:py|patch|csv|sh|json|ya?ml|md|txt)\\b",     // file names
+    "(?:[\\w.-]+/)?[\\w.-]*#\\d{3,7}\\b",                             // sglang#32548, #28685
+    "\\b(?:" + ORGS.join("|") + ")/[\\w.:-]+",                        // HF repos, image tags
+    "\\b[A-Za-z_][A-Za-z0-9]*(?:_[A-Za-z0-9*]+)+(?:=[^\\s,;)]*[^\\s,;).])?", // snake_case, ENV=value
+    "\\b(?:" + bareFlagNames().join("|") + ")\\b"                     // flags named bare
+  ].join("|"), "g");
+
+  function typog(s) {
+    return s
+      .replace(/ -> /g, " → ")
+      .replace(/ --+ /g, " — ")
+      .replace(/ - /g, " — ")
+      .replace(/~(?=\d)/g, "≈")
+      .replace(/(\d(?:\.\d+)?)x\b/g, "$1×")
+      .replace(/(\d)\s(ms|s|min|GB|TB|GiB|MB|tok\/s)\b/g, "$1\u00A0$2");
+  }
+
+  // Issue refs are written three ways: #28685, sglang#9897, ROCm/rocm-libraries#8639.
+  // Only the first two are ours to resolve against sgl-project.
+  function codeSpan(tok) {
+    var pr = tok.match(/^(?:([\w.-]+)\/)?([\w.-]*)#(\d{3,7})$/);
+    if (pr) {
+      var repo = (pr[1] ? pr[1] : "sgl-project") + "/" + (pr[2] || "sglang");
+      return '<a class="ref" href="https://github.com/' + repo + "/issues/" + pr[3] +
+        '"><code>' + esc(tok) + "</code></a>";
+    }
+    var text = tok.charAt(0) === "`" ? tok.slice(1, -1) : tok;
+    return '<code class="' + (text.indexOf("--") === 0 ? "f" : "id") + '">' + esc(text) + "</code>";
+  }
+
+  function prose(raw) {
+    if (raw == null || raw === "") return "";
+    var s = String(raw), out = "", last = 0, m;
+    CODEISH.lastIndex = 0;
+    while ((m = CODEISH.exec(s)) !== null) {
+      out += esc(typog(s.slice(last, m.index))) + codeSpan(m[0]);
+      last = m.index + m[0].length;
+      if (m[0] === "") CODEISH.lastIndex++;          // never spin on an empty match
+    }
+    return out + esc(typog(s.slice(last)));
+  }
+
   // ---------------------------------------------------------------- roofline
   function bestDecode(cfg) {
     var rows = (cfg.benchmarks || []).map(function (b) {
@@ -357,17 +423,9 @@
 
     var chips =
       '<span class="chip gfx">' + esc(cfg.gfx) + " · " + esc(cfg.hw_name) + "</span>" +
-      '<span class="chip">' + esc(cfg.quant) + "</span>" +
       '<span class="chip">' + esc(cfg.strategy) + "</span>" +
       '<span class="chip">' + esc(cfg.gpus) + "× GPU</span>" +
       statusBadge(model.status);
-
-    var spec =
-      specCell("Architecture", model.architecture) +
-      specCell("Params", (model.params_total || "—"), (model.params_active ? model.params_active + " active" : "")) +
-      specCell("Precision", model.precision) +
-      specCell("Context", model.context_len || "—") +
-      specCell("Weights", model.weights_gb ? fmt(model.weights_gb, 0) + " GB" : "—");
 
     var html =
       '<div class="rc-head">' +
@@ -375,10 +433,10 @@
           '<span class="hf">↳ <a href="https://huggingface.co/' + esc(model.hf_path) + '">' + esc(model.hf_path) + "</a></span></div>" +
         '<div class="rc-chips">' + chips + "</div>" +
       "</div>" +
-      '<div class="rc-spec">' + spec + "</div>" +
+      specSheet(model, cfg) +
       '<div class="rc-body">' +
         unverifiedNote +
-        (model.summary ? '<div class="block"' + (unverifiedNote ? "" : ' style="border-top:0;padding-top:20px"') + '><p class="lead" style="margin:0">' + esc(model.summary) + "</p></div>" : "") +
+        summaryBlock(model) +
         (rl ? rooflineBlock(rl, cfg) : "") +
         commandBlock(cfg) +
         argBlock(cfg) +
@@ -403,6 +461,79 @@
   function specCell(k, v, sub) {
     return '<div class="cell"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) +
       (sub ? ' <small>' + esc(sub) + "</small>" : "") + "</div></div>";
+  }
+
+  // Context windows are quoted in tokens. 1048576 is noise; 1M is a spec.
+  // Only whole standalone counts are rewritten, so "max_model_len=1048576" is left
+  // alone — that one is a literal you might type.
+  function fmtContext(v) {
+    if (!v) return "—";
+    return String(v).replace(/(^|[\s(])(\d{4,})(?=$|[\s),;])/g, function (all, pre, n) {
+      var t = Number(n);
+      if (t % 1048576 === 0) return pre + t / 1048576 + "M";
+      if (t % 1024 === 0) return pre + t / 1024 + "k";
+      return all;
+    });
+  }
+
+  // A datasheet puts short values in a strip and long ones on their own line.
+  // Architecture and precision are sentences for some models and two words for
+  // others, so the split is by length, not by field.
+  var SPEC_INLINE_MAX = 34;
+  function specWords(s) {
+    return String(s).toLowerCase().replace(/[(),;:]/g, " ").split(/\s+/).filter(Boolean);
+  }
+  function saysNothingNew(a, b) {          // is b entirely contained in a?
+    var seen = {};
+    specWords(a).forEach(function (w) { seen[w] = 1; });
+    return specWords(b).every(function (w) { return seen[w]; });
+  }
+  function specSheet(model, cfg) {
+    // The model's precision and the cell's quant string are the same fact at two
+    // resolutions. Print both only when the coarser one actually says something
+    // the detailed one leaves out (Kimi-K3's effective bytes/param, for example).
+    var precision = model.precision || "";
+    var quant = cfg.quant || "";
+    if (precision && quant) {
+      if (saysNothingNew(quant, precision)) { precision = quant; quant = ""; }
+      else if (saysNothingNew(precision, quant)) { quant = ""; }
+    }
+    var specs = [
+      { k: "Params", v: model.params_total || "—", sub: model.params_active ? model.params_active + " active" : "" },
+      { k: "Context", v: fmtContext(model.context_len) },
+      { k: "Weights", v: model.weights_gb ? fmt(model.weights_gb, 0) + " GB" : "—" },
+      { k: "Bytes/param", v: model.bytes_per_param ? String(model.bytes_per_param) : "", sub: "active set" },
+      { k: "Precision", v: precision },
+      { k: "Architecture", v: model.architecture || "" },
+      { k: "Checkpoint", v: quant }
+    ].filter(function (s) { return s.v; });
+
+    var strip = specs.filter(function (s) { return s.v.length <= SPEC_INLINE_MAX; });
+    var notes = specs.filter(function (s) { return s.v.length > SPEC_INLINE_MAX; });
+    return '<div class="rc-spec">' +
+      strip.map(function (s) { return specCell(s.k, s.v, s.sub); }).join("") + "</div>" +
+      (notes.length ? '<div class="rc-notes">' + notes.map(function (s) {
+        return '<div class="specrow"><div class="k">' + esc(s.k) + "</div>" +
+          '<div class="v prose">' + prose(s.v) + "</div></div>";
+      }).join("") + "</div>" : "");
+  }
+
+  // The summary is the one part of a card that is pure prose, and the longest.
+  // Written as one string it renders as twenty unbroken lines, so it is stored as
+  // topic-tagged paragraphs: a lede, then one claim per row against a label rail.
+  // A plain string still works — it just renders as the lede.
+  function summaryBlock(model) {
+    if (!model.summary) return "";
+    var items = Array.isArray(model.summary) ? model.summary : [{ text: model.summary }];
+    var rows = items.map(function (it) {
+      var text = typeof it === "string" ? it : it.text;
+      if (!text) return "";
+      var topic = typeof it === "string" ? "" : it.topic;
+      if (!topic) return '<p class="lede prose">' + prose(text) + "</p>";
+      return '<div class="srow"><div class="st">' + esc(topic) + "</div>" +
+        '<p class="sp prose">' + prose(text) + "</p></div>";
+    }).join("");
+    return rows ? '<div class="block"><div class="summary">' + rows + "</div></div>" : "";
   }
 
   function rooflineBlock(rl, cfg) {
@@ -442,9 +573,9 @@
     var flags = parseFlags(cfg.launch_python || "");
     if (!flags.length) return "";
     var rows = flags.map(function (f) {
-      var why = FLAGS[f.flag] || "—";
+      var why = FLAGS[f.flag];
       return "<tr><td class='flag'>" + esc(f.flag) + "</td><td class='val'>" + esc(f.value || "✓") +
-        "</td><td class='why'>" + esc(why) + "</td></tr>";
+        "</td><td class='why prose'>" + (why ? prose(why) : "—") + "</td></tr>";
     }).join("");
     return '<div class="block"><h3>Argument reference <span class="hint">every flag, explained</span></h3>' +
       '<table class="argtable"><thead><tr><th>flag</th><th>value</th><th>what it does</th></tr></thead><tbody>' +
@@ -459,7 +590,7 @@
       '<div class="aiter"><div class="atop"><span class="lbl">AITER</span>' +
         '<span class="state ' + (a.enabled ? "on" : "off") + '">' + (a.enabled ? "enabled" : "off") + "</span>" +
         (a.commit ? '<span class="commit">@ ' + esc(a.commit) + "</span>" : "") + "</div>" +
-        (a.summary ? '<div class="asum">' + esc(a.summary) + "</div>" : "") +
+        (a.summary ? '<div class="asum prose">' + prose(a.summary) + "</div>" : "") +
         '<div class="arows">' +
           (arts ? '<div class="arow"><span class="ak">tuned artifacts</span><span>' + arts + "</span></div>" : "") +
           (kers ? '<div class="arow"><span class="ak">kernels</span><span>' + kers + "</span></div>" : "") +
@@ -470,17 +601,23 @@
     if (!env || !env.length) return "";
     var rows = env.map(function (e) {
       return "<tr><td class='kv'><span class='ek'>" + esc(e.key) + "</span>=<span class='ev'>" + esc(e.value) +
-        "</span></td><td class='why'>" + esc(e.why || "") + "</td></tr>";
+        "</span></td><td class='why prose'>" + prose(e.why || "") + "</td></tr>";
     }).join("");
     return '<div class="block"><h3>Container environment <span class="hint">runtime toggles</span></h3>' +
       '<table class="envtable"><thead><tr><th>variable</th><th>why</th></tr></thead><tbody>' + rows + "</tbody></table></div>";
   }
 
+  // decode_tok_s is a PER-STREAM rate (1000/TPOT), so it is only meaningful at
+  // concurrency 1 and is left blank above it. output_tok_s is the aggregate
+  // generation throughput, which is the number that means something at a full batch.
+  // Keeping them as separate columns is deliberate: collapsing them is how you end up
+  // reading 9 tok/s and 7,892 tok/s off the same row.
   var BENCH_COLS = [
     { k: "ttft_ms", label: "TTFT ms", d: 0 },
     { k: "tpot_ms", label: "TPOT ms", d: 1 },
     { k: "prefill_tok_s", label: "prefill tok/s", d: 0 },
     { k: "decode_tok_s", label: "decode tok/s", d: 1, hl: true },
+    { k: "output_tok_s", label: "output tok/s", d: 1 },
     { k: "total_tok_s", label: "total tok/s", d: 1 },
     { k: "tok_s_per_gpu", label: "tok/s/GPU", d: 1 }
   ];
@@ -499,7 +636,13 @@
         }).join("") + "</tr>";
     }).join("");
     return '<div class="block"><h3>Measured performance <span class="hint">verified runs only · source-traced</span></h3>' +
-      '<div class="dtable-scroll"><table class="dtable"><thead><tr>' + head + "</tr></thead><tbody>" + rows + "</tbody></table></div></div>";
+      '<div class="dtable-scroll"><table class="dtable"><thead><tr>' + head + "</tr></thead><tbody>" + rows + "</tbody></table>" +
+      "<caption><b>decode tok/s</b> is a single stream's steady-state rate (1000/TPOT), so it is " +
+      "only meaningful at concurrency 1 and is left blank above it — read TPOT instead. " +
+      "<b>output tok/s</b> is aggregate generation across the batch; <b>total tok/s</b> adds input " +
+      "tokens, so it is the one to compare against prefill-heavy published figures. A blank cell " +
+      "means the quantity was not measured for that row, never that it measured zero." +
+      "</caption></div></div>";
   }
 
   function nvBlock(cfg) {
@@ -528,14 +671,14 @@
     var items = acc.map(function (a) {
       return '<div class="accitem"><div class="an">' + esc(a.name) + '</div><div class="av">' + esc(a.value) + "</div>" +
         (a.ref ? '<div class="ar">ref ' + esc(a.ref) + "</div>" : "") +
-        (a.note ? '<div class="ar">' + esc(a.note) + "</div>" : "") + "</div>";
+        (a.note ? '<div class="anote prose">' + prose(a.note) + "</div>" : "") + "</div>";
     }).join("");
     return '<div class="block"><h3>Accuracy <span class="hint">correctness check on AMD</span></h3><div class="acc">' + items + "</div></div>";
   }
 
   function gotchaBlock(g) {
     if (!g || !g.length) return "";
-    var items = g.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("");
+    var items = g.map(function (x) { return '<li class="prose">' + prose(x) + "</li>"; }).join("");
     return '<div class="block"><h3>Gotchas <span class="hint">learned the hard way</span></h3><ul class="gotchas">' + items + "</ul></div>";
   }
 
@@ -631,7 +774,7 @@
           : '<p class="gap-dep">↳ upstream dependency — no AMD script yet</p>';
         return '<div class="gap"><div class="gap-h"><span class="gap-kind ' + esc(g.kind) + '">' + esc(g.kind) + "</span>" +
           '<span class="gap-t">' + esc(g.title) + "</span></div>" +
-          '<p class="gap-note">' + esc(g.note) + "</p>" + cmd + "</div>";
+          '<p class="gap-note prose">' + prose(g.note) + "</p>" + cmd + "</div>";
       }).join("");
       return '<div class="rm-card"><div class="rm-head"><span class="rm-name">' + esc(m.name) + "</span>" +
         '<span class="rm-count">' + gaps.length + " open</span></div>" + rows + "</div>";

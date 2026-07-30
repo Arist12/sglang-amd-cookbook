@@ -72,7 +72,7 @@ An earlier run of this gate reported FAIL on five of six checks. That was a pars
 bug in the reporter, not a result: the GSM8K regex scanned forward from `Score` and
 picked up the `64` in `--max-tokens 64000`, and the AIME25 regex read the `8` out of
 the label `pass@1[avg-of-8]`. Both now anchor on the `=` or on the exact `[METRIC]`
-key ([`gate-k3.py`](../../gate-k3.py)).
+key ([`gate-k3.py`](../../grid_k3/gate-k3.py)).
 
 The degeneration probe separately reported FAIL on `nospec` for one sample at 29.5%
 8-gram repetition. Inspecting the sample showed fluent, correct English — a reasoning

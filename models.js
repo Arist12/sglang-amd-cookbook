@@ -52,7 +52,31 @@ window.MODELS = [
     "bytes_per_param": 1,
     "weights_gb": 704,
     "context_len": "1048576",
-    "summary": "Single-node TP=8 deployment of zai-org/GLM-5.2-FP8 (MoE + MLA/DSA, glm_moe_dsa) with SGLang and the DSA tilelang prefill+decode backend, verified on BOTH 8x MI300X (gfx942) and 8x MI355X (gfx950). FP8 weights (704 GB -> 88 GB/GPU) fit single-node; BF16 (~1.4 TB -> ~175 GB/GPU) does not. bf16 KV cache, chunked-prefill 8192, no MTP/speculative decoding on AMD. The launch command is IDENTICAL on both GPUs; gfx950 additionally requires TWO mandatory source patches first (the _use_aiter_bpreshuffle_gfx95=False flag in BOTH fp8_utils.py and models/deepseek_common/utils.py) or GSM8K collapses to ~0.0 (#28685, ROCm 7.2 kernel miscompile) -- gfx942 needs none of them. (A third, SGLANG_FP8_PAGED_MQA_LOGITS_TORCH, is already the correct default for GLM-5.2's GlmMoeDsaForCausalLM path and only matters if you also serve DeepSeek-V4 from the same tree.) Accuracy at parity on both (GSM8K 97.2% / 97.7%; AIME25 via sgl-eval pass@1 avg-of-16: MI300X 90.6%, MI355X 91.5% -- both within noise, both beat the 87.7% ref). MI355X is ~1.4-1.9x faster than MI300X (single-stream 67 vs 48 tok/s; c64 1009 vs 528 tok/s). Long-context: LongBench-v2 59.5%, near-flat decode TPOT at long ctx.",
+    "summary": [
+      {
+        "text": "Single-node TP=8 deployment of zai-org/GLM-5.2-FP8 (MoE + MLA/DSA, glm_moe_dsa) with SGLang and the DSA tilelang prefill+decode backend, verified on BOTH 8x MI300X (gfx942) and 8x MI355X (gfx950)."
+      },
+      {
+        "topic": "memory",
+        "text": "FP8 weights (704 GB -> 88 GB/GPU) fit single-node; BF16 (~1.4 TB -> ~175 GB/GPU) does not. bf16 KV cache, chunked-prefill 8192, no MTP/speculative decoding on AMD."
+      },
+      {
+        "topic": "gfx950 patches",
+        "text": "The launch command is IDENTICAL on both GPUs; gfx950 additionally requires TWO mandatory source patches first (the _use_aiter_bpreshuffle_gfx95=False flag in BOTH fp8_utils.py and models/deepseek_common/utils.py) or GSM8K collapses to ~0.0 (#28685, ROCm 7.2 kernel miscompile) -- gfx942 needs none of them. (A third, SGLANG_FP8_PAGED_MQA_LOGITS_TORCH, is already the correct default for GLM-5.2's GlmMoeDsaForCausalLM path and only matters if you also serve DeepSeek-V4 from the same tree.)"
+      },
+      {
+        "topic": "accuracy",
+        "text": "Accuracy at parity on both (GSM8K 97.2% / 97.7%; AIME25 via sgl-eval pass@1 avg-of-16: MI300X 90.6%, MI355X 91.5% -- both within noise, both beat the 87.7% ref)."
+      },
+      {
+        "topic": "mi300x vs mi355x",
+        "text": "MI355X is ~1.4-1.9x faster than MI300X (single-stream 67 vs 48 tok/s; c64 1009 vs 528 tok/s)."
+      },
+      {
+        "topic": "long context",
+        "text": "LongBench-v2 59.5%, near-flat decode TPOT at long ctx."
+      }
+    ],
     "configs": [
       {
         "gfx": "gfx942",
@@ -478,7 +502,15 @@ window.MODELS = [
     "architecture": "MoE + Native Sparse Attention (NSA); model_type glm_moe_dsa (described as DeepSeek-V2 architecture in the section). 744B total params, 40B active. NSA backend = tilelang (prefill + decode).",
     "precision": "FP8",
     "status": "not_benchmarked",
-    "summary": "FP8 MoE + Native Sparse Attention model (744B total / 40B active), served on 8x MI355X (gfx950) via SGLang TP=8 with tilelang NSA prefill/decode backends. Cookbook gives copy-paste launch commands (TP=8 recommended, TP=4 alternative) plus a verification curl, but contains no measured benchmark, accuracy, or vs-NVIDIA numbers, so nothing is verified.",
+    "summary": [
+      {
+        "text": "FP8 MoE + Native Sparse Attention model (744B total / 40B active), served on 8x MI355X (gfx950) via SGLang TP=8 with tilelang NSA prefill/decode backends."
+      },
+      {
+        "topic": "status",
+        "text": "Cookbook gives copy-paste launch commands (TP=8 recommended, TP=4 alternative) plus a verification curl, but contains no measured benchmark, accuracy, or vs-NVIDIA numbers, so nothing is verified."
+      }
+    ],
     "params_total": "744B",
     "params_active": "40B",
     "active_params_billions": 40,
@@ -564,7 +596,23 @@ window.MODELS = [
     "bytes_per_param": 1,
     "weights_gb": 274,
     "context_len": "1M (max_model_len=1048576)",
-    "summary": "DeepSeek-V4-Flash-FP8 (FP8 MoE, 256 routed experts, MQA/Compressed MLA with 1 KV head, 43 layers, 274 GiB weights) served on 8x MI355X (gfx950) via SGLang PR #23608. The \"correctness first\" config runs with every JIT fast-path disabled: torch-reference FlashMLA, Triton-forced MoE-FP8, CUDA graph off, radix cache off, 11 SGLANG_OPT_USE_*=false. Decode is flat at ~4 tok/s at BS=1 because attention is tiny (1 KV head) and the bottleneck is per-token MoE-FP8 matmul plus the pure-PyTorch FlashMLA reference; TP=8 does not help a BS=1 workload since per-expert MoE work is already small. Verified ISL/OSL latency sweep measured with bench_one_batch_server at TP=8 DP=8, BS=1.",
+    "summary": [
+      {
+        "text": "DeepSeek-V4-Flash-FP8 (FP8 MoE, 256 routed experts, MQA/Compressed MLA with 1 KV head, 43 layers, 274 GiB weights) served on 8x MI355X (gfx950) via SGLang PR #23608."
+      },
+      {
+        "topic": "config",
+        "text": "The \"correctness first\" config runs with every JIT fast-path disabled: torch-reference FlashMLA, Triton-forced MoE-FP8, CUDA graph off, radix cache off, 11 SGLANG_OPT_USE_*=false."
+      },
+      {
+        "topic": "bottleneck",
+        "text": "Decode is flat at ~4 tok/s at BS=1 because attention is tiny (1 KV head) and the bottleneck is per-token MoE-FP8 matmul plus the pure-PyTorch FlashMLA reference; TP=8 does not help a BS=1 workload since per-expert MoE work is already small."
+      },
+      {
+        "topic": "method",
+        "text": "Verified ISL/OSL latency sweep measured with bench_one_batch_server at TP=8 DP=8, BS=1."
+      }
+    ],
     "configs": [
       {
         "gfx": "gfx950",
@@ -818,7 +866,31 @@ window.MODELS = [
     "bytes_per_param": 2,
     "weights_gb": 752,
     "context_len": null,
-    "summary": "Qwen3.5-397B-A17B (397B MoE, 17B active) served BF16 at TP=8 on 8x MI355X (gfx950) via SGLang. Hybrid DeltaNet architecture: 45 recurrent linear-attention layers + 15 GQA layers, run with the triton attention backend (NOT aiter — the verified image is a fixed build that disables the broken aiter stub and patches quark imports). --max-mamba-cache-size 128 is the load-bearing flag (+45% perf vs the default 64) because of the 45 DeltaNet recurrent layers. SGLANG_ROCM_FUSED_DECODE_MLA must be forced to 0 (the base image ships it as 1, which crashes the triton backend with a ForwardMetadata unpacking error). Verified decode ~52-59 tok/s at BS=1 across input lengths 1k-16k. Sub-note: a kernel-engineering fine-tune ships as the JinnP/Qwen3.5-397B-A17B-LoRA-SFT-v4 LoRA adapter (rank 32 / alpha 64, 128.5M trainable params = 0.032%, 13 target module types, 270-example AMD-GPU-kernel-engineering dataset, best eval loss 0.0547 at epoch 8). SGLang runtime LoRA cannot serve it (--lora-paths fails at init_lora_shapes() because the adapter targets 6 unsupported modules across the DeltaNet layers + MoE shared_expert_gate; see sglang#9897). Workaround: merge the adapter offline with LLaMA-Factory (llamafactory-cli export merge_qwen35_lora.yaml, ~25 min on CPU, ~800 GB RAM, output 743 GB / 122 shards) and serve the merged checkpoint with the identical base launch command (just swap --model-path and --served-model-name to Qwen3.5-397B-A17B-SFT-v4). This is NOT a separate verified config — no independent benchmark numbers were measured for the merged model.",
+    "summary": [
+      {
+        "text": "Qwen3.5-397B-A17B (397B MoE, 17B active) served BF16 at TP=8 on 8x MI355X (gfx950) via SGLang."
+      },
+      {
+        "topic": "architecture",
+        "text": "Hybrid DeltaNet architecture: 45 recurrent linear-attention layers + 15 GQA layers, run with the triton attention backend (NOT aiter — the verified image is a fixed build that disables the broken aiter stub and patches quark imports). --max-mamba-cache-size 128 is the load-bearing flag (+45% perf vs the default 64) because of the 45 DeltaNet recurrent layers."
+      },
+      {
+        "topic": "environment",
+        "text": "SGLANG_ROCM_FUSED_DECODE_MLA must be forced to 0 (the base image ships it as 1, which crashes the triton backend with a ForwardMetadata unpacking error)."
+      },
+      {
+        "topic": "performance",
+        "text": "Verified decode ~52-59 tok/s at BS=1 across input lengths 1k-16k."
+      },
+      {
+        "topic": "lora adapter",
+        "text": "A kernel-engineering fine-tune ships as the JinnP/Qwen3.5-397B-A17B-LoRA-SFT-v4 LoRA adapter (rank 32 / alpha 64, 128.5M trainable params = 0.032%, 13 target module types, 270-example AMD-GPU-kernel-engineering dataset, best eval loss 0.0547 at epoch 8). SGLang runtime LoRA cannot serve it (--lora-paths fails at init_lora_shapes() because the adapter targets 6 unsupported modules across the DeltaNet layers + MoE shared_expert_gate; see sglang#9897)."
+      },
+      {
+        "topic": "merge workaround",
+        "text": "Merge the adapter offline with LLaMA-Factory (llamafactory-cli export merge_qwen35_lora.yaml, ~25 min on CPU, ~800 GB RAM, output 743 GB / 122 shards) and serve the merged checkpoint with the identical base launch command (just swap --model-path and --served-model-name to Qwen3.5-397B-A17B-SFT-v4). This is NOT a separate verified config — no independent benchmark numbers were measured for the merged model."
+      }
+    ],
     "configs": [
       {
         "gfx": "gfx950",
@@ -964,7 +1036,39 @@ window.MODELS = [
     "bytes_per_param": 1.31,
     "weights_gb": 1561,
     "context_len": "1048576 (measured to 131072)",
-    "summary": "Day-0 bring-up of moonshotai/Kimi-K3 (2.78T total / 105.4B active, hybrid KDA + MLA, 896 routed experts) on 8x MI355X at TP=8, in both the plain and the DSpark speculative-decoding configuration from sgl-project/sglang#32548. Accuracy is at parity between the two and healthy in absolute terms: GSM8K 97.49% / 97.64%, AIME25 pass@1 avg-of-8 93.33% / 94.58% - speculative decoding is lossless, as it should be. Everything else about DSpark is conditional, and the condition is accept length. It doubles single-stream decode on short greedy prompts (51.40 -> 104.00 tok/s, accept 5.95 on GSM8K) and is 1.54x faster over a full GSM8K run; it is 3.45x slower on sampled AIME25 at 48 concurrent (accept ~2.9) and 10x slower at 131k context (accept 1.2), where the plain config holds TPOT almost flat at 22 ms because only 24 of 93 layers carry a growing KV cache. The 1.56 TB checkpoint lands at 194.38 GB/GPU under the aiter MXFP4 path, which is mandatory rather than a tuning knob. Serving DSpark with any non-greedy sampling needs dspark_rocm_renorm.patch, without which the first top_p batch takes the scheduler down on ROCm. A launch-parameter search on 2026-07-29 then found the Day-0 recipe was leaving a lot on the table, and two knobs recover almost all of it: --mem-fraction-static 0.93 instead of 0.85 lifts the non-spec KV pool 54% and takes peak throughput from 6198 to 7892 tok/s (+27%, 987 tok/s/GPU at concurrency 128), because 0.85 left 35 GB/GPU idle while the scheduler reported full token usage 0.99 with requests queued; and --speculative-dspark-block-size 3 is worth +68% to DSpark (2142 -> 3606 tok/s) while also cutting median TTFT from 11.2 s to 6.6 s and TPOT from 171 to 100 ms, since halving the verify window from 8 to 4 nearly halves the verify tax while accept length only falls from 3.00 to 2.55. Both are accuracy-neutral (GSM8K 97.489% / 97.641%, AIME25 91.67% / 95.42%). Most of the obvious knobs do nothing: chunked-prefill-size, cuda-graph-max-bs-decode and schedule-conservativeness all measured within noise, and the two mem-fraction values above 0.93 boot cleanly and then die on the first heavy prefill in the aiter MXFP4 fused-MoE stage-2 buffer.",
+    "summary": [
+      {
+        "text": "Day-0 bring-up of moonshotai/Kimi-K3 (2.78T total / 105.4B active, hybrid KDA + MLA, 896 routed experts) on 8x MI355X at TP=8, in both the plain and the DSpark speculative-decoding configuration from sgl-project/sglang#32548."
+      },
+      {
+        "topic": "accuracy",
+        "text": "Accuracy is at parity between the two and healthy in absolute terms: GSM8K 97.49% / 97.64%, AIME25 pass@1 avg-of-8 93.33% / 94.58% - speculative decoding is lossless, as it should be."
+      },
+      {
+        "topic": "dspark",
+        "text": "Everything else about DSpark is conditional, and the condition is accept length. It doubles single-stream decode on short greedy prompts (51.40 -> 104.00 tok/s, accept 5.95 on GSM8K) and is 1.54x faster over a full GSM8K run; it is 3.45x slower on sampled AIME25 at 48 concurrent (accept ~2.9) and 10x slower at 131k context (accept 1.2), where the plain config holds TPOT almost flat at 22 ms because only 24 of 93 layers carry a growing KV cache."
+      },
+      {
+        "topic": "memory",
+        "text": "The 1.56 TB checkpoint lands at 194.38 GB/GPU under the aiter MXFP4 path, which is mandatory rather than a tuning knob."
+      },
+      {
+        "topic": "sampling",
+        "text": "Serving DSpark with any non-greedy sampling needs dspark_rocm_renorm.patch, without which the first top_p batch takes the scheduler down on ROCm."
+      },
+      {
+        "topic": "tuning · kv pool",
+        "text": "A launch-parameter search on 2026-07-29 found the Day-0 recipe was leaving a lot on the table, and two knobs recover almost all of it. --mem-fraction-static 0.93 instead of 0.85 lifts the non-spec KV pool 54% and takes peak throughput from 6198 to 7892 tok/s (+27%, 987 tok/s/GPU at concurrency 128), because 0.85 left 35 GB/GPU idle while the scheduler reported full token usage 0.99 with requests queued."
+      },
+      {
+        "topic": "tuning · dspark",
+        "text": "--speculative-dspark-block-size 3 is worth +68% to DSpark (2142 -> 3606 tok/s) while also cutting median TTFT from 11.2 s to 6.6 s and TPOT from 171 to 100 ms, since halving the verify window from 8 to 4 nearly halves the verify tax while accept length only falls from 3.00 to 2.55. Both are accuracy-neutral (GSM8K 97.489% / 97.641%, AIME25 91.67% / 95.42%)."
+      },
+      {
+        "topic": "null results",
+        "text": "Most of the obvious knobs do nothing: chunked-prefill-size, cuda-graph-max-bs-decode and schedule-conservativeness all measured within noise, and the two mem-fraction values above 0.93 boot cleanly and then die on the first heavy prefill in the aiter MXFP4 fused-MoE stage-2 buffer."
+      }
+    ],
     "configs": [
       {
         "gfx": "gfx950",
@@ -1058,6 +1162,7 @@ window.MODELS = [
             "ttft_ms": 178,
             "tpot_ms": 8.78,
             "decode_tok_s": 111.58,
+            "output_tok_s": 111.58,
             "total_tok_s": 223.16,
             "tok_s_per_gpu": 27.9,
             "source": "kimi_k3_playbook.md section 5.1 (benchmark.serving, random 1024/1024, --speculative-dspark-block-size 3, accept length 2.76; grid_results/20260729_091009 p3-lat-win). Day-0 default block size measured 9.43 ms / 104.0 tok/s here."
@@ -1068,10 +1173,10 @@ window.MODELS = [
             "concurrency": 4,
             "ttft_ms": 423,
             "tpot_ms": 11.74,
-            "decode_tok_s": 289.14,
+            "output_tok_s": 289.14,
             "total_tok_s": 578.28,
             "tok_s_per_gpu": 72.3,
-            "source": "kimi_k3_playbook.md section 5.1 (block size 3, accept length 2.68). Day-0 default: 14.55 ms / 253.84 tok/s."
+            "source": "kimi_k3_playbook.md section 5.1 (block size 3, accept length 2.68). Day-0 default: 14.55 ms TPOT / 253.84 aggregate output tok/s."
           },
           {
             "isl": 1024,
@@ -1079,10 +1184,10 @@ window.MODELS = [
             "concurrency": 8,
             "ttft_ms": 638,
             "tpot_ms": 15.25,
-            "decode_tok_s": 470.72,
+            "output_tok_s": 470.72,
             "total_tok_s": 941.44,
             "tok_s_per_gpu": 117.7,
-            "source": "kimi_k3_playbook.md section 5.1 (block size 3, accept length 2.61). Day-0 default: 18.37 ms / 382.87 tok/s."
+            "source": "kimi_k3_playbook.md section 5.1 (block size 3, accept length 2.61). Day-0 default: 18.37 ms TPOT / 382.87 aggregate output tok/s."
           },
           {
             "isl": 8192,
@@ -1090,6 +1195,7 @@ window.MODELS = [
             "concurrency": 48,
             "ttft_ms": 6569,
             "tpot_ms": 100.05,
+            "output_tok_s": 400.68,
             "total_tok_s": 3606.12,
             "tok_s_per_gpu": 450.8,
             "source": "kimi_k3_playbook.md section 5.1 (benchmark.serving, random 8192/1024, mem-fraction 0.92 + block size 3, accept length 2.55; grid_results/20260729_091009 p3-g3). Day-0 default block size on the identical workload: 2142.48 tok/s at 11249 ms TTFT."
@@ -1100,6 +1206,7 @@ window.MODELS = [
             "concurrency": 32,
             "ttft_ms": 1073,
             "tpot_ms": 40.09,
+            "output_tok_s": 669.33,
             "total_tok_s": 1338.66,
             "tok_s_per_gpu": 167.3,
             "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024, accept length 3.26) - measured at the Day-0 default block size, not the block size 3 this cell now ships"
@@ -1111,7 +1218,10 @@ window.MODELS = [
             "ttft_ms": 644,
             "tpot_ms": 15.2,
             "decode_tok_s": 65.8,
-            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, DSpark)"
+            "output_tok_s": 60.69,
+            "total_tok_s": 1031.81,
+            "tok_s_per_gpu": 129.0,
+            "source": "kimi_k3_playbook.md section 5.4 (bench_serving, long context, single stream, DSpark; longctx-dspark.txt ISL 8192)"
           },
           {
             "isl": 32768,
@@ -1120,7 +1230,10 @@ window.MODELS = [
             "ttft_ms": 3189,
             "tpot_ms": 48.93,
             "decode_tok_s": 20.4,
-            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, DSpark)"
+            "output_tok_s": 18.13,
+            "total_tok_s": 1178.37,
+            "tok_s_per_gpu": 147.3,
+            "source": "kimi_k3_playbook.md section 5.4 (bench_serving, long context, single stream, DSpark; longctx-dspark.txt ISL 32768)"
           },
           {
             "isl": 131072,
@@ -1129,7 +1242,10 @@ window.MODELS = [
             "ttft_ms": 23956,
             "tpot_ms": 221.49,
             "decode_tok_s": 4.5,
-            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, DSpark)"
+            "output_tok_s": 3.73,
+            "total_tok_s": 958.55,
+            "tok_s_per_gpu": 119.8,
+            "source": "kimi_k3_playbook.md section 5.4 (bench_serving, long context, single stream, DSpark; longctx-dspark.txt ISL 131072). Compare the non-spec cell's 3722.43 total at the same length - DSpark collapses here because accept length falls to 1.18-1.32."
           }
         ],
         "vs_nvidia": [],
@@ -1255,6 +1371,7 @@ window.MODELS = [
             "ttft_ms": 178,
             "tpot_ms": 19.28,
             "decode_tok_s": 51.4,
+            "output_tok_s": 51.4,
             "total_tok_s": 102.81,
             "tok_s_per_gpu": 12.9,
             "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024)"
@@ -1265,9 +1382,10 @@ window.MODELS = [
             "concurrency": 8,
             "ttft_ms": 993,
             "tpot_ms": 24.72,
+            "output_tok_s": 311.79,
             "total_tok_s": 623.57,
             "tok_s_per_gpu": 78.0,
-            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024)"
+            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024). ISL == OSL with --random-range-ratio 1, so output is exactly half of total."
           },
           {
             "isl": 1024,
@@ -1275,9 +1393,10 @@ window.MODELS = [
             "concurrency": 32,
             "ttft_ms": 2397,
             "tpot_ms": 35.58,
+            "output_tok_s": 847.87,
             "total_tok_s": 1695.74,
             "tok_s_per_gpu": 212.0,
-            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024)"
+            "source": "kimi_k3_playbook.md (bench_serving, random 1024/1024). ISL == OSL with --random-range-ratio 1, so output is exactly half of total."
           },
           {
             "isl": 8192,
@@ -1286,7 +1405,10 @@ window.MODELS = [
             "ttft_ms": 623,
             "tpot_ms": 19.54,
             "decode_tok_s": 51.2,
-            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, no speculative decoding)"
+            "output_tok_s": 48.19,
+            "total_tok_s": 819.3,
+            "tok_s_per_gpu": 102.4,
+            "source": "kimi_k3_playbook.md section 5.4 (bench_serving, long context, single stream, no speculative decoding; longctx-nospec.txt ISL 8192)"
           },
           {
             "isl": 32768,
@@ -1295,7 +1417,10 @@ window.MODELS = [
             "ttft_ms": 3135,
             "tpot_ms": 20.41,
             "decode_tok_s": 49.0,
-            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, no speculative decoding)"
+            "output_tok_s": 37.7,
+            "total_tok_s": 2450.61,
+            "tok_s_per_gpu": 306.3,
+            "source": "kimi_k3_playbook.md section 5.4 (bench_serving, long context, single stream, no speculative decoding; longctx-nospec.txt ISL 32768)"
           },
           {
             "isl": 131072,
@@ -1304,7 +1429,10 @@ window.MODELS = [
             "ttft_ms": 24026,
             "tpot_ms": 22.13,
             "decode_tok_s": 45.2,
-            "source": "kimi_k3_playbook.md (bench_serving, long context, single stream, no speculative decoding)"
+            "output_tok_s": 14.48,
+            "total_tok_s": 3722.43,
+            "tok_s_per_gpu": 465.3,
+            "source": "kimi_k3_playbook.md section 5.4 (bench_serving, long context, single stream, no speculative decoding; longctx-nospec.txt ISL 131072). Total throughput is prefill-dominated at this length, which is why it is the highest on the page despite 14.5 output tok/s."
           },
           {
             "isl": 8192,
@@ -1312,6 +1440,7 @@ window.MODELS = [
             "concurrency": 96,
             "ttft_ms": 29530,
             "tpot_ms": 92.87,
+            "output_tok_s": 788.23,
             "total_tok_s": 7094.1,
             "tok_s_per_gpu": 886.8,
             "source": "kimi_k3_playbook.md section 5.1 (benchmark.serving, random 8192/1024, mem-fraction 0.93; grid_results/20260729_091009 p2-base-mf0.93)"
@@ -1322,6 +1451,7 @@ window.MODELS = [
             "concurrency": 128,
             "ttft_ms": 39005,
             "tpot_ms": 108.05,
+            "output_tok_s": 876.87,
             "total_tok_s": 7891.8,
             "tok_s_per_gpu": 986.5,
             "source": "kimi_k3_playbook.md section 5.1 (benchmark.serving, random 8192/1024, mem-fraction 0.93; three-run mean of 7875.74/7896.33/7903.34, +/-0.35%). Saturation point: KV use 0.92 with zero queueing."
@@ -1332,6 +1462,7 @@ window.MODELS = [
             "concurrency": 160,
             "ttft_ms": 48425,
             "tpot_ms": 116.97,
+            "output_tok_s": 782.68,
             "total_tok_s": 7044.08,
             "tok_s_per_gpu": 880.5,
             "source": "kimi_k3_playbook.md section 5.1 (past saturation: KV use 0.99, 22 queued, running pinned at 138)"
@@ -1342,6 +1473,7 @@ window.MODELS = [
             "concurrency": 192,
             "ttft_ms": 60714,
             "tpot_ms": 119.6,
+            "output_tok_s": 816.92,
             "total_tok_s": 7352.29,
             "tok_s_per_gpu": 919.0,
             "source": "kimi_k3_playbook.md section 5.1 (past saturation: KV use 0.99, 54 queued, running pinned at 138)"
@@ -1409,7 +1541,23 @@ window.MODELS = [
     "architecture": "Mixture-of-Experts (MLA attention, 384 routed experts), 1T total params / 32B active per token",
     "precision": "W4A16",
     "status": "verified",
-    "summary": "Kimi-K2.6 (1T MoE, 32B active, W4A16, 384 routed experts) verified on 8x MI355X (gfx950) with the prebuilt jhinpan/sglang-k26-mi355x:v0.5.10rc0-rocm720-20260420 image. Default TP=8 EP=1 hits the pre-tuned 13-bucket E=384,N=128 int4_w4a16 MoE configs; triton MLA for decode + aiter for prefill. Measured BS=1 single-request decode 34-45 tok/s across 1k-32k context. EP8/tp2ep4/tp4ep2 mori-a2a variants exist but lack tuned N=2048 configs and are slower at BS=1.",
+    "summary": [
+      {
+        "text": "Kimi-K2.6 (1T MoE, 32B active, W4A16, 384 routed experts) verified on 8x MI355X (gfx950) with the prebuilt jhinpan/sglang-k26-mi355x:v0.5.10rc0-rocm720-20260420 image."
+      },
+      {
+        "topic": "moe configs",
+        "text": "Default TP=8 EP=1 hits the pre-tuned 13-bucket E=384,N=128 int4_w4a16 MoE configs; triton MLA for decode + aiter for prefill."
+      },
+      {
+        "topic": "performance",
+        "text": "Measured BS=1 single-request decode 34-45 tok/s across 1k-32k context."
+      },
+      {
+        "topic": "variants",
+        "text": "EP8/tp2ep4/tp4ep2 mori-a2a variants exist but lack tuned N=2048 configs and are slower at BS=1."
+      }
+    ],
     "params_total": "1T",
     "params_active": "32B",
     "active_params_billions": 32,
@@ -1583,7 +1731,19 @@ window.MODELS = [
     "weights_gb": 555,
     "context_len": "131072",
     "status": "verified",
-    "summary": "Kimi-K2.5 (1T total / 32B active W4A16 INT4 MoE + MLA) served on 8x MI355X (gfx950) at TP=8. Optimized config hits 23.5ms decode median (42.6 tok/s) at BS=1 vs 38.3ms baseline (+38.6%) using hybrid attention (triton decode + aiter prefill), GEMM A16W16 small-M tuning, and MoE Triton config tuning. Optional Eagle3 speculative decoding adds ~1.8x on short-context coding/math.",
+    "summary": [
+      {
+        "text": "Kimi-K2.5 (1T total / 32B active W4A16 INT4 MoE + MLA) served on 8x MI355X (gfx950) at TP=8."
+      },
+      {
+        "topic": "optimizations",
+        "text": "Optimized config hits 23.5ms decode median (42.6 tok/s) at BS=1 vs 38.3ms baseline (+38.6%) using hybrid attention (triton decode + aiter prefill), GEMM A16W16 small-M tuning, and MoE Triton config tuning."
+      },
+      {
+        "topic": "speculative",
+        "text": "Optional Eagle3 speculative decoding adds ~1.8x on short-context coding/math."
+      }
+    ],
     "configs": [
       {
         "gfx": "gfx950",

@@ -223,14 +223,43 @@ section { padding: 46px 0; border-bottom: 1px solid var(--rule); }
 .badge.gap { color: var(--graphite); background: var(--paper-sunk); border: 1px solid var(--rule-2); }
 .badge.gap::before { content: "—"; }
 
-/* spec grid */
-.rc-spec { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--rule); }
+/* spec grid — short datums only; anything sentence-length goes to .rc-notes */
+.rc-spec { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); border-bottom: 1px solid var(--rule); }
 @media (max-width: 760px) { .rc-spec { grid-template-columns: repeat(2,1fr); } }
 .rc-spec .cell { padding: 14px 18px; border-right: 1px solid var(--rule); }
 .rc-spec .cell:last-child { border-right: 0; }
 .rc-spec .k { font-family: var(--mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--graphite); }
 .rc-spec .v { font-family: var(--disp); font-weight: 600; font-size: 1.04rem; margin-top: 3px; line-height: 1.2; }
 .rc-spec .v small { font-family: var(--mono); font-weight: 400; font-size: .68em; color: var(--graphite); }
+
+/* spec values that are sentences: label rail + body type, not display type */
+.rc-notes { border-bottom: 1px solid var(--rule); }
+.specrow { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 18px; padding: 10px 18px; }
+.specrow + .specrow { border-top: 1px dashed var(--rule); }
+.specrow .k { font-family: var(--mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--graphite); padding-top: 3px; }
+.specrow .v { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); max-width: 96ch; }
+@media (max-width: 640px) { .specrow { grid-template-columns: 1fr; gap: 3px; } }
+
+/* ---------------------------------------------------------------- summary
+   Topic-tagged paragraphs against a label rail. The rail is what makes it
+   skimmable: one claim per row, and you can find the row you came for. */
+.summary { display: grid; gap: 13px; }
+.summary .lede { margin: 0 0 3px; font-size: 1.06rem; line-height: 1.6; color: var(--ink); max-width: 76ch; }
+.summary .srow { display: grid; grid-template-columns: 132px minmax(0, 76ch); gap: 18px; }
+.summary .st { font-family: var(--mono); font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--graphite); padding-top: 5px; }
+.summary .sp { margin: 0; color: var(--ink-2); line-height: 1.68; }
+@media (max-width: 640px) { .summary .srow { grid-template-columns: 1fr; gap: 3px; } }
+
+/* Inline identifiers inside prose. No chip background: a summary can carry a
+   dozen of them per paragraph, and boxes at that density are their own wall.
+   The mono face plus teal for flags is enough to separate code from English. */
+.prose code { font-family: var(--mono); font-size: .88em; color: var(--ink); }
+.prose code.f { color: var(--measured-ink); }
+.prose a.ref { text-decoration: none; }
+.prose a.ref code { color: var(--measured-ink); border-bottom: 1px solid #bcdadd; }
+.prose a.ref:hover code { border-bottom-color: var(--measured); }
 
 /* card body blocks */
 .rc-body { padding: 4px 22px 22px; }
@@ -365,6 +394,8 @@ section { padding: 46px 0; border-bottom: 1px solid var(--rule); }
 .acc .accitem .an { font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--graphite); }
 .acc .accitem .av { font-family: var(--disp); font-weight: 700; font-size: 1.3rem; color: var(--measured-ink); }
 .acc .accitem .ar { font-family: var(--mono); font-size: 11px; color: var(--graphite); }
+/* the run notes are sentences, not fields — mono at 11px turns them into a smear */
+.acc .accitem .anote { font-size: 12.5px; line-height: 1.55; color: var(--ink-2); margin-top: 5px; max-width: 96ch; }
 
 /* gotchas */
 .gotchas { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
