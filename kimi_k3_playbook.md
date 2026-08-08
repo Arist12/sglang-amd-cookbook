@@ -9,9 +9,27 @@ Upstream: [sgl-project/sglang#32541](https://github.com/sgl-project/sglang/pull/
 (model support) and [#32548](https://github.com/sgl-project/sglang/issues/32548)
 (the AMD Day-0 recipe this reproduces).
 
+> **Update 2026-08-08 — read this before the rest of the page.** Two things
+> changed since the Day-0 pass.
+>
+> 1. **K3 is upstream now.** It landed in SGLang on 2026-08-04
+>    ([#32541](https://github.com/sgl-project/sglang/pull/32541)) and the
+>    dedicated MI35X nightly was retired the next day
+>    ([#33689](https://github.com/sgl-project/sglang/pull/33689)), so
+>    `rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805` takes the commands below with
+>    no fork and no patch — including `dspark_rocm_renorm.patch`, whose fix is
+>    upstream. It is also ~10% faster than the fork build. See §2.2.
+> 2. **The long-context DSpark cliff in §5.4 was a bug in the draft checkpoint,
+>    not a limit of speculative decoding**, and it also caused a 5.83 pp AIME26
+>    accuracy deficit. Both disappear on draft revision `56ce616a`. See §5.4a
+>    and §4.0a. If you take one operational thing from this page, take this:
+>    pin the draft model by snapshot path.
+
 **Headline:** the two configurations are accuracy-identical and speed-opposite.
 DSpark is 1.54× faster on greedy GSM8K, 3.45× *slower* on sampled AIME25, and
-10× slower at 131k context. Pick per workload, not once.
+was 10× slower at 131k context on the Day-0 draft checkpoint — that last one is
+now known to be a fixed bug (§5.4a); on the current checkpoint DSpark stays ahead
+through 32k. Pick per workload, not once.
 
 **Second headline, from the parameter search in section 7:** the Day-0 recipe
 leaves a lot on the table, and two knobs recover almost all of it.
@@ -80,6 +98,44 @@ A turnkey alternative is the published Day-0 image
 `lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727`, which takes the identical
 command and env. The numbers here were *not* measured on it; they come from the
 source build in section 8.
+
+### 2.0 Use the upstream image instead
+
+As of 2026-08-05 there is a better answer than either: the mainline ROCm nightly
+`rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805`. K3 support merged upstream on
+08-04 and AMD stopped publishing the dedicated K3 MI35X nightly on 08-05
+([#33689](https://github.com/sgl-project/sglang/pull/33689)), so the fork image
+is now the legacy path.
+
+What you get by moving:
+
+| | fork image (Day-0) | upstream v0.5.16 |
+|---|---|---|
+| sglang | `DarkSharpness/sglang-kimi` @ `533bff471` | upstream `main` @ `4e7209caa` |
+| aiter | `carlushuang/aiter-k3` @ `68e42f5f` (`v0.1.18-77`) | `ROCm/aiter` @ `d9e5ef7ce` (`v0.1.19-12`) |
+| 8192/1024 c128 | 7,892 tok/s | **8,695 tok/s** (+10.2%) |
+| 8192/1024 c96 | 7,094 tok/s | **7,839 tok/s** (+10.5%) |
+| 1024/1024 c1 TPOT | 19.28 ms | **17.56 ms** |
+| `dspark_rocm_renorm.patch` | required | **not needed** — upstream `dflash_utils.py` has an `is_hip()` branch importing the triton renorm kernels |
+
+Nothing about the launch command changes: all twelve flags in §2.1 are still
+valid on v0.5.16 and `kimi_k3` is still a legal `--reasoning-parser` /
+`--tool-call-parser` choice. Two build details are worth knowing before you run
+anything in this image:
+
+- `sglang.bench_serving` is deprecated in favour of `sglang.benchmark.serving`.
+- The editable install maps `sglang` to the repo root rather than `repo/python`,
+  so it resolves as a namespace package and `sglang.benchmark.*` and
+  `sglang.test.run_eval` are unreachable until you set
+  `PYTHONPATH=/sgl-workspace/sglang/python`.
+
+The fork image is not strictly behind, but the two things it has that upstream
+lacks are narrow: `situ_and_mul_masked_post_quant.cuh` and a DeepGEMM patch
+script that upstream replaced with a released 0.1.5.post1. Upstream carries an
+AMD path the fork does not — `kernels/ops/kimi_k3/attn_res_hip.py`
+([#33599](https://github.com/sgl-project/sglang/pull/33599)) — and `ROCm/aiter`'s
+`configs/` tree is a strict superset of the fork's, with more tuned rows for the
+K3 shapes.
 
 ### 2.1 Tuned recipes
 
@@ -238,6 +294,50 @@ sgl-eval run aime25 --base-url http://127.0.0.1:30000/v1 \
 Both are driven by [`eval_kimi_k3.sh`](eval_kimi_k3.sh). No `--thinking-mode` is
 needed: `--reasoning-parser kimi_k3` already puts the trace in
 `reasoning_content` and leaves `content` clean for the answer extractor.
+
+### 4.0a AIME26 on the upstream image, and what the draft revision costs
+
+Re-run on `rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805` with no fork and no
+patch. AIME26 is not in SGLang's `run_eval` (it ships `aime25` only), so the
+harness subclasses the in-tree `AIME25Eval` and swaps nothing but the dataset —
+prompt template, `ANSWER_PATTERN`, scorer and aggregation are inherited, which is
+what makes these comparable to the AIME25 rows above. Problems from
+[math-ai/aime26](https://huggingface.co/datasets/math-ai/aime26) (all 30).
+
+| Eval | non-spec | DSpark `eb03982e` | DSpark `56ce616a` |
+|---|---:|---:|---:|
+| GSM8K n=1319 greedy | 97.60% | 97.70% | **97.87%** |
+| GSM8K wall clock | 557 s | 422 s (1.32×) | **351 s (1.59×)** |
+| GSM8K accept length | — | 3.533 | 3.574 |
+| AIME26 pass@1 avg-of-4 | **95.83%** ±2.10% | 90.00% ±1.36% | **95.83%** ±2.10% |
+| AIME26 wall clock | 4839 s | 8097 s (0.60×) | 6039 s (0.80×) |
+| AIME26 accept length | — | 2.268 | 2.354 |
+
+Two things worth stating plainly.
+
+**The 5.83 pp AIME26 deficit was the draft checkpoint, not speculation.** On
+`eb03982e` every one of the four repeats came in below the non-spec mean
+(93.33 / 90.0 / 86.67 / 90.0). On `56ce616a` the score is identical to non-spec
+to the decimal — speculative decoding is lossless, as the theory says, once the
+draft model is not broken. This is the regression check §4 was written for, and
+it caught a real defect.
+
+**DSpark is still slower on AIME26 even after the fix, and that is expected.**
+AIME26 runs 32 threads at `--max-tokens 64000`, so it sits on all three decay
+axes at once: high concurrency, a context that grows into the tens of thousands
+during generation, and high-entropy open-ended reasoning (accept 2.354 against
+GSM8K's 3.574). GSM8K — short, structured, greedy — gets 1.59× on the same
+server. A single eval cannot tell you whether to enable DSpark; the workload
+shape decides, and §5.5a gives the three numbers to predict from.
+
+Caveat on resolution: 30 problems × 4 repeats means one problem is worth 3.33 pp,
+so this protocol resolves several-point differences, not fractions of a point.
+
+```bash
+# AIME26 — not in run_eval; harness inherits sglang's AIME25Eval scorer
+python aime26_eval.py --base-url http://127.0.0.1:30000 \
+  --data data/aime26.jsonl --repeat 4 --num-threads 32 --max-tokens 64000
+```
 
 ### 4.1 The tuned recipes are output-neutral
 
@@ -406,7 +506,7 @@ the extra slots come straight off throughput. Concurrency and accept length
 therefore have to be read together — which is why this cookbook files DSpark
 under *low-latency* and the plain config under *high-throughput*.
 
-### 5.4 Long context: the plain config is flat, DSpark falls off a cliff
+### 5.4 Long context: the plain config is flat (DSpark cliff — superseded, see §5.4a)
 
 Single stream, OSL 512, `--dataset-name random`:
 
@@ -438,13 +538,74 @@ DSpark leads at 8k and loses by 3.9× at 131k.
 
 DSpark goes the other way, from 2× faster at 1k to 10× slower at 131k, and the
 server log says why: accept length collapses to **1.18–1.32** at 131k, an accept
-rate of 0.03. The draft model is 5 dense MQA layers; it cannot track that much
-context, so every step pays 8 target token-slots to land ~1.2 tokens. TTFT is
-identical between the two at every length, which is the expected control —
-speculative decoding does not touch prefill.
+rate of 0.03. TTFT is identical between the two at every length, which is the
+expected control — speculative decoding does not touch prefill.
 
-**So: turn DSpark off for long-context serving.** It is the sharpest
-configuration knob on this page.
+> **Corrected 2026-08-08.** The explanation this section originally gave for
+> that collapse — "the draft model is 5 dense MQA layers; it cannot track that
+> much context" — was wrong. It was a bug in the draft checkpoint, and it has
+> been fixed upstream. See [§5.4a](#54a-the-cliff-was-a-draft-checkpoint-bug).
+> The measurements above are real but describe revision `eb03982e` only; on the
+> fixed revision DSpark stays ahead through 32k. Do not use this table to decide
+> anything without reading the next section.
+
+### 5.4a The cliff was a draft-checkpoint bug
+
+`RadixArk/Kimi-K3-DSpark` shipped two revisions eight days apart, and they differ
+in one line that decides the whole long-context story:
+
+```
+eb03982e (2026-07-27)   "rope_parameters": {"rope_theta": 10000.0, "rope_type": "default"}
+56ce616a (2026-08-01)   "rope_parameters": {"factor": 16.0,
+                                            "original_max_position_embeddings": 65536,
+                                            "rope_theta": 10000.0,
+                                            "rope_type": "yarn"}
+```
+
+Both configs declare `max_position_embeddings: 1048576`. Only the second one has
+any scaling behind that claim. With `rope_type: default` the draft's positional
+encoding runs out of distribution as the prompt grows, which is exactly the
+failure signature we recorded and misattributed to model capacity. The weights
+changed too, not just the config (`b9efa709…` → `41daa08b…`).
+
+Re-measured on `rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805`, single stream,
+OSL 1024, radix cache off, `--dataset-name random`:
+
+| ISL | accept `eb03982e` | accept `56ce616a` | ratio vs non-spec, old | ratio, fixed |
+|------:|-----:|-----:|-----:|-----:|
+| 1,024 | 3.84 | 3.79 | 2.90× | 2.85× |
+| 8,192 | 3.72 | 3.87 | 2.25× | 2.34× |
+| 16,384 | 2.99 | **3.88** | 1.49× | **1.89×** |
+| 32,768 | 2.04 | **3.84** | 0.80× | **1.38×** |
+| 65,536 | 1.47 | **3.66** | 0.45× | **0.95×** |
+
+The collapse is gone: accept length is flat at 3.66–3.90 across the whole range.
+32k flips from a 20% loss to a 38% win, and 64k comes back to break-even.
+
+Two ways to keep running the broken revision by accident, both of which caught us:
+
+1. Benchmark recipes set `HF_HUB_OFFLINE=1` to keep a gated repo from stalling
+   boot. That also means the local cache never revalidates, so a checkpoint
+   downloaded once is frozen.
+2. Even after `snapshot_download` fetches the new revision, the cache's
+   `refs/main` still points at the old one, so
+   `--speculative-draft-model-path RadixArk/Kimi-K3-DSpark` keeps resolving to
+   `eb03982e`.
+
+Pass the snapshot path explicitly and verify it after boot:
+
+```bash
+DRAFT=$HF_HOME/hub/models--RadixArk--Kimi-K3-DSpark/snapshots/56ce616ad7486f0e96cbb51ef23ed5a1bce1d92d
+sglang serve ... --speculative-draft-model-path "$DRAFT"
+
+curl -s localhost:30000/server_info | python3 -c \
+  'import json,sys; print(json.load(sys.stdin)["speculative_draft_model_path"])'
+```
+
+The residual decline that survives the fix — 2.85× at 1k down to 0.95× at 64k
+with accept length flat — is a different mechanism: DSpark only accelerates
+decode, so a longer prompt means a larger prefill share that speculation cannot
+touch. Dilution, not drafting failure.
 
 ### 5.5 Accept length is a workload property, not a platform defect
 
@@ -464,6 +625,76 @@ The upstream figure sits at the GSM8K-like end of that range and reproduces here
 exactly. Both content and sampling move it: predictable structured text lets the
 5-layer draft model run ahead, while open-ended prose and a temperature-1.0
 target flatten the distribution the draft is trying to guess.
+
+> The 131k row belongs to §5.4a, not here — it was the broken draft revision,
+> not a workload effect. Note also that these numbers were taken at the default
+> block size 7 (verify window 8). The shipped recipe uses block size 3, whose
+> window of 4 caps accept length at 4, so a GSM8K reading of 5.95 is not
+> reachable under the command this page now ships; the same run measures 3.57.
+
+#### 5.5a Output entropy is the axis, measured directly
+
+`bench_serving`'s `random` dataset cannot express output entropy, so the table
+above conflates content type with sampling. SPEED-Bench
+([nvidia/SPEED-Bench](https://huggingface.co/datasets/nvidia/SPEED-Bench)) exists
+for exactly this: its Throughput split holds ISL fixed and stratifies prompts
+into low-entropy (code, sorting), mixed (STEM) and high-entropy (creative
+writing) tiers. Single stream, radix cache on, fixed draft revision, on
+`rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805`:
+
+| ISL | low entropy | mixed | high entropy |
+|------:|-----:|-----:|-----:|
+| 1k | **3.22** | 2.76 | 2.46 |
+| 8k | 2.93 | 2.75 | 2.47 |
+| 32k | 2.86 | 2.66 | **2.33** |
+
+The ordering holds at every input length, and — with the draft model fixed —
+entropy is the *only* axis that moves accept length. Concurrency does not
+(3.84–3.92 across 1→64 concurrent at ISL 1k) and neither does context length
+(3.66–3.90 across 1k→64k). Those two axes still decay the *benefit*, through
+compute saturation and prefill dilution respectively, but they do it without
+touching how well the draft guesses.
+
+#### 5.5b Do not measure this with `--dataset-name random`
+
+Random-token prompts do not just fail to represent real traffic — they
+systematically *overstate* speculative decoding. Feed K3 1024 uniformly random
+token ids at temperature 0 with `ignore_eos` and it emits a 4-token loop:
+
+```
+�_TYPES�_TYPES�_TYPES�_TYPES…      (512 generated tokens)
+  unique_tokens: 4 / 512      unique_ratio: 0.0078
+  most_repeated_8gram_count: 127
+```
+
+A draft model predicting a loop is near-perfect by construction, which is why the
+random dataset reports 3.8 — higher than the *easiest* real workload in the table
+above (3.22 for code). Real accept length on this model lives in 2.33–2.94, so
+synthetic prompts inflate it by 20–60%, and inflate every speedup derived from it.
+This is the same effect NVIDIA report in the SPEED-Bench paper as "synthetic
+inputs overestimate real-world throughput".
+
+#### 5.5c Real agentic traffic
+
+The shape that matters for coding agents is long input, short output, many turns,
+with a large shared prefix between turns. Replaying 64 real OpenHands
+conversations ([nebius/SWE-rebench-openhands-trajectories](https://huggingface.co/datasets/nebius/SWE-rebench-openhands-trajectories),
+Qwen3-Coder-480B against real GitHub issues), 24 turns each, **radix cache on**:
+
+| | non-spec | DSpark | ratio | accept |
+|---|---:|---:|---:|---:|
+| concurrency 1 | 51.10 tok/s | **72.76** | **1.42×** | 2.936 |
+| concurrency 8 | **257.54** | 184.79 | 0.72× | 3.006 |
+
+Measured with the K3 tokenizer, the prompt grows from a median 3,393 tokens at
+turn 1 to 26,878 at turn 24 (max 47,552), and each assistant reply is ~220 tokens
+— the figure SGLang's own trace loader uses as the OpenHands average. So the
+context does get long, but per-turn generation stays short.
+
+Prefix caching is load-bearing for the single-stream case: without it the same
+cell is 1.06×, with it 1.42×. It does not rescue concurrency, and the reason is
+that the two problems are different — the cache removes redundant prefill, while
+the concurrency ceiling is compute saturation on the verify step.
 
 ### 5.6 DSpark + non-greedy sampling crashes on ROCm without the patch
 
@@ -620,6 +851,32 @@ a Blackwell MLA backend, verify-budget trimming needs a ROCm MLA backend that se
 
 Not the published Day-0 image — see section 2. The GSM8K numbers predate the
 patch (greedy, so unaffected); the AIME25 numbers require it.
+
+### 8.1 The 2026-08-06/08 re-measurement
+
+Everything in §2.0, §4.0a, §5.4a, §5.5a, §5.5b and §5.5c comes from a separate
+pass on the upstream image, not from the source build above.
+
+| | |
+|---|---|
+| image | `rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805` (stock, no patch) |
+| sglang | upstream `main` `4e7209caa`, reporting `0.5.16.dev20260805+g99709f734d` |
+| aiter | `ROCm/aiter` `d9e5ef7ce`, reporting `0.1.20.dev12+gd9e5ef7ce` (`v0.1.19-12`) |
+| draft model | `RadixArk/Kimi-K3-DSpark` `56ce616a` (YaRN); the `eb03982e` columns are the older `rope_type: default` revision |
+| node | same 8× MI355X box |
+| dates | 2026-08-06 (grid + GSM8K), 08-07 (AIME26, SPEED-Bench, agentic), 08-08 (draft-revision re-check) |
+| scope | 24 throughput cells × 2 configs, ISL 1k–64k × concurrency 1–128, plus SPEED-Bench 1k/8k/32k × 3 entropy tiers and 64-conversation agentic replay |
+
+Two method notes that matter for reproducing the accept-length figures:
+
+- `bench_serving` prints `Accept length` by reading the server's *cumulative*
+  `avg_spec_accept_length`, so consecutive cells blend together. Reset it between
+  cells with `POST /set_internal_state` and an empty `server_args` — the
+  validation loop is skipped, `if_success` stays true, and the success path zeroes
+  the accumulator without changing anything.
+- Block size 3 means `--speculative-num-draft-tokens 4`, so accept length is
+  capped near 4. The 5.95 GSM8K figure elsewhere on this page was measured at the
+  default block size 7 (window 8) and is not reachable under the shipped command.
 
 ## 9. Teardown
 

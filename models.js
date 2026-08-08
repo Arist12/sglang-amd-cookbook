@@ -1067,6 +1067,22 @@ window.MODELS = [
       {
         "topic": "null results",
         "text": "Most of the obvious knobs do nothing: chunked-prefill-size, cuda-graph-max-bs-decode and schedule-conservativeness all measured within noise, and the two mem-fraction values above 0.93 boot cleanly and then die on the first heavy prefill in the aiter MXFP4 fused-MoE stage-2 buffer."
+      },
+      {
+        "topic": "upstream image",
+        "text": "K3 landed in upstream SGLang on 2026-08-04 (#32541) and the dedicated MI35X nightly was retired the next day (#33689), so rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805 takes the identical launch command with no fork and no patch. It is also faster than the Day-0 fork build: 8695 vs 7892 tok/s at 8192/1024 concurrency 128 (+10.2%), 7839 vs 7094 at concurrency 96 (+10.5%), single-stream TPOT 17.56 vs 19.28 ms. Upstream even ships an AMD path the fork image lacks (kernels/ops/kimi_k3/attn_res_hip.py from #33599), and ROCm/aiter's tuned-config set is a strict superset of the k3-for-amd fork's."
+      },
+      {
+        "topic": "dspark · draft checkpoint",
+        "text": "The most important thing to get right about DSpark is which draft revision you load. RadixArk/Kimi-K3-DSpark at eb03982e (2026-07-27) declares max_position_embeddings 1048576 but sets rope_parameters.rope_type to \"default\" - no scaling at all - so the draft drifts out of distribution as context grows. Revision 56ce616a (2026-08-01) switches to YaRN (factor 16 over an original 65536 window) and changes the weights too. On the broken revision accept length falls 3.84 -> 1.47 from 1k to 64k input and DSpark becomes a 0.45x loss; on the fixed one accept length stays flat at 3.66-3.90 and 64k recovers to 0.95x. Every long-context and AIME number below was re-taken on the fixed revision."
+      },
+      {
+        "topic": "dspark · what actually governs it",
+        "text": "With the draft model fixed, three independent axes decay the benefit and only one of them touches accept length. Concurrency: 2.90x at 1 down to 1.20x at 64 while accept length sits still at 3.84-3.92, because a full batch has no spare compute to absorb the verify tax. Input length: 2.85x at 1k down to 0.95x at 64k with accept length still flat, because DSpark only accelerates decode and prefill dilutes the accelerated fraction. Output entropy: the only axis that moves accept length - 3.22 for low-entropy code, 2.76 for mixed STEM, 2.46 for high-entropy creative writing on SPEED-Bench."
+      },
+      {
+        "topic": "benchmarking",
+        "text": "Do not evaluate speculative decoding with --dataset-name random. Fed 1024 uniformly random token ids at temperature 0 with ignore_eos, K3 emits a 4-token loop (4 unique tokens out of 512, top 8-gram repeated 127 times). Predicting a loop is trivial, so random data reports accept length 3.8 - higher than the easiest real workload on SPEED-Bench, which is 3.22 for code. Real accept length on this model lives in 2.33-2.94, so synthetic prompts overstate it by 20-60% and overstate DSpark's benefit with it."
       }
     ],
     "configs": [
@@ -1152,6 +1168,24 @@ window.MODELS = [
             "value": "95.42%",
             "note": "pass@1 avg-of-8 via sgl-eval, +/-3.54% (SEM 1.25%), 240 samples; stop_rate 100%, truncated 0%, no_answer 0%, error 0%. Shortening the verify window from 8 to 4 does not cost accuracy - the target still verifies every token - and here it came out slightly above baseline.",
             "ref": "94.58% +/-3.05% at the Day-0 default block size - the +0.84 pp is well inside 1 sigma"
+          },
+          {
+            "name": "GSM8K (upstream v0.5.16, draft 56ce616a)",
+            "value": "97.87%",
+            "note": "Re-measured on rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805 with the YaRN draft revision. In-tree run_eval, 5-shot completion scorer, temperature 0, all 1319 questions, 32 threads. Wall clock 351 s against 557 s without speculation - 1.59x - at accept length 3.574.",
+            "ref": "97.60% without speculation on the same image; 97.70% at 422 s on the older eb03982e draft"
+          },
+          {
+            "name": "AIME26 (upstream v0.5.16, draft 56ce616a)",
+            "value": "95.83%",
+            "note": "pass@1 avg-of-4, +/-2.10% (SEM), 30 problems x 4 repeats, temperature 1.0 / top_p 0.95 / max_tokens 64000, 32 threads. Per-repeat 96.67 / 100.0 / 96.67 / 90.0. Accept length 2.354. The older eb03982e draft scored 90.00% +/-1.36% on the same protocol - a 5.83 pp deficit that disappeared entirely once the draft's RoPE scaling was fixed, confirming the deficit was a checkpoint bug and not a property of speculative decoding.",
+            "ref": "95.83% +/-2.10% without speculation - exact parity"
+          },
+          {
+            "name": "AIME26 wall clock (upstream v0.5.16)",
+            "value": "0.80x",
+            "note": "Accuracy is at parity but DSpark is SLOWER here: 6039 s against 4839 s without speculation. AIME26 runs 32 threads at max_tokens 64000, so it sits on all three decay axes at once - high concurrency, a context that grows into the tens of thousands during generation, and high-entropy open-ended reasoning (accept length 2.354 against GSM8K's 3.574). GSM8K, whose outputs are short and structured, gets 1.59x on the same server.",
+            "ref": "the older eb03982e draft was worse still at 0.60x (8097 s)"
           }
         ],
         "benchmarks": [
@@ -1250,7 +1284,11 @@ window.MODELS = [
         ],
         "vs_nvidia": [],
         "gotchas": [
-          "Turn DSpark OFF for long context - this is the sharpest knob on the page. Single-stream TPOT runs 9.43 / 15.20 / 48.93 / 221.49 ms at 1k / 8k / 32k / 131k input with DSpark, against 19.28 / 19.54 / 20.41 / 22.13 ms without it. The plain config is almost flat because only 24 of 93 layers carry a growing KV cache - the other 69 are constant-state KDA - so a 128x longer prompt costs 15% more per token. DSpark inverts from 2x faster to 10x slower over the same range because accept length collapses to 1.18-1.32 at 131k (accept rate 0.03): the 5-layer dense draft model cannot track that much context, so every step pays 8 target token-slots to land ~1.2 tokens. TTFT is unaffected either way (23.96 s vs 24.03 s at 131k) - speculative decoding does not touch prefill.",
+          "CORRECTED 2026-08-08: the long-context DSpark cliff was a draft-checkpoint bug, not a property of speculative decoding. The original reading here - accept length collapsing to 1.18-1.32 at 131k, DSpark inverting from 2x faster to 10x slower, blamed on \"the 5-layer dense draft model cannot track that much context\" - was measured on RadixArk/Kimi-K3-DSpark revision eb03982e, whose rope_parameters.rope_type is \"default\" despite a declared 1M context. On revision 56ce616a (YaRN, factor 16 over an original 65536 window) the collapse disappears: single-stream accept length is 3.79 / 3.87 / 3.88 / 3.84 / 3.66 at 1k / 8k / 16k / 32k / 64k against 3.84 / 3.72 / 2.99 / 2.04 / 1.47 before, and the throughput ratio goes 2.85x / 2.34x / 1.89x / 1.38x / 0.95x against 2.90x / 2.25x / 1.49x / 0.80x / 0.45x. DSpark now stays ahead through 32k and only reaches break-even at 64k. Pin the draft model by snapshot path, not by repo name: under HF_HUB_OFFLINE=1 a stale refs/main silently keeps resolving to the old revision even after the new one is downloaded. What still holds: the plain config is almost flat with length because only 24 of 93 layers carry a growing KV cache, and TTFT is unaffected either way since speculation does not touch prefill.",
+          "The residual decline with input length is real but has a different cause than accept length. With the fixed draft model accept length is flat across 1k-64k, yet the benefit still decays 2.85x -> 0.95x, because DSpark only accelerates decode: the longer the prompt, the larger the prefill share speculation cannot touch. That is dilution, not drafting failure, which is why the crossover tracks the ISL/OSL ratio rather than context length alone.",
+          "Pin the draft checkpoint by snapshot path. Two traps make it easy to keep running the broken eb03982e revision: benchmark scripts commonly set HF_HUB_OFFLINE=1, so the local cache never revalidates against the hub, and even after downloading 56ce616a the cached refs/main still points at the old one, so --speculative-draft-model-path RadixArk/Kimi-K3-DSpark silently resolves to eb03982e. Pass the full .../snapshots/56ce616a... path instead, and confirm speculative_draft_model_path in /server_info after boot.",
+          "Real agentic traffic is the case this cell is least obviously right for, so it was measured rather than argued. Replaying 64 real OpenHands conversations (nebius/SWE-rebench-openhands-trajectories, 24 turns each, prompt growing from a median 3,393 tokens at turn 1 to 26,878 at turn 24, ~220 tokens of assistant reply per turn) with the radix cache ON: DSpark is 1.42x at concurrency 1 (72.76 vs 51.10 tok/s, accept 2.936) and 0.72x at concurrency 8 (184.79 vs 257.54 tok/s, accept 3.006). Prefix caching is what makes single-stream work - it lifts that cell from 1.06x to 1.42x - but it does not rescue concurrency, because the cache removes redundant prefill while the concurrency ceiling is compute saturation.",
+          "Accept length is set by output entropy, and once the draft model is correct nothing else moves it. On SPEED-Bench (nvidia/SPEED-Bench Throughput split, concurrency 1, radix cache on) it is 3.22 / 2.76 / 2.46 at ISL 1k and 2.86 / 2.66 / 2.33 at ISL 32k for low-entropy code, mixed STEM and high-entropy creative writing - the ordering holds at every input length. Predict from those numbers rather than from a synthetic sweep.",
           "Whether DSpark helps or hurts flips with accept length x concurrency, and the eval runs make the size of it concrete. GSM8K (greedy, 32 threads, accept 5.95): 393.7 s / 711 tok/s with DSpark vs 605.4 s / 469 tok/s without - 1.54x faster. AIME25 (temperature 1.0, 48 threads, accept ~2.9): 6779.7 s / 188 tok/s with DSpark vs 1964.1 s / 692 tok/s without - 3.45x SLOWER. At 8 draft tokens per step and accept 2.9, each accepted token costs 2.76 target token-slots; with a full batch the target is compute-bound, so that overhead lands directly on throughput.",
           "DSpark + any non-greedy sampling killed the scheduler on ROCm before dspark_rocm_renorm.patch: build_dflash_verify_target_probs calls top_k_renorm_prob / top_p_renorm_prob, which sglang imports from sgl_kernel only under is_cuda() or is_musa() and leaves as None elsewhere, so the first decode batch carrying top_p or top_k dies with \"TypeError: 'NoneType' object is not callable\". Greedy traffic (GSM8K) never touches it, so this hides until an AIME-style run. DFLASH escapes because its worker gates non-greedy verify on is_dflash_sampling_verify_available() and degrades to greedy argmax; DSPARK has no such gate. The patch routes the renorm to the torch implementations instead of degrading, which keeps sampling semantics intact.",
           "DSpark accept length is a property of the workload, not of the platform. Measured on this node: 5.95 mean over 1314 GSM8K requests (greedy, structured math; min 3.72 max 7.67), 3.26-3.32 on bench_serving random 1024/1024, 3.28 on ShareGPT, and 2.9-3.0 during AIME25 (temperature 1.0, top_p 0.95, long open-ended reasoning). The 5.29-5.93 quoted in #32548 sits at the GSM8K-like end of that range and reproduces here - an earlier revision of this page wrongly filed the low random/ShareGPT numbers as an unexplained platform gap.",
@@ -1361,6 +1399,18 @@ window.MODELS = [
             "value": "91.67%",
             "note": "pass@1 avg-of-8 via sgl-eval, +/-3.09% (SEM 1.09%), 240 samples; stop_rate 99.17%, truncated 0.83%, no_answer 0.83%, error 0%. Measured with the opt-in --mamba-ssm-dtype bfloat16 in place. The -1.66 pp delta is 0.88 sigma of the pooled SEM, so not a detectable regression, but it is the largest delta in the gate and this is the only config that lost samples to truncation - which is why the shipped command in this cell leaves the bfloat16 SSM knob out and keeps only the memory change.",
             "ref": "93.33% +/-4.36% at Day-0 settings - inside 1 sigma"
+          },
+          {
+            "name": "GSM8K (upstream v0.5.16)",
+            "value": "97.60%",
+            "note": "Re-measured on rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805, no fork and no patch. In-tree run_eval, 5-shot completion scorer, temperature 0, all 1319 questions, 32 threads. Wall clock 557 s.",
+            "ref": "97.49% on the fork build - parity, so the upstream image is accuracy-neutral"
+          },
+          {
+            "name": "AIME26 (upstream v0.5.16)",
+            "value": "95.83%",
+            "note": "pass@1 avg-of-4, +/-2.10% (SEM), 30 problems x 4 repeats = 120 samples, temperature 1.0 / top_p 0.95 / max_tokens 64000, 32 threads. Per-repeat 100.0 / 96.67 / 90.0 / 96.67. Wall clock 4839 s. Problems from math-ai/aime26; the harness subclasses SGLang's in-tree AIME25Eval and swaps only the dataset, so prompt template, answer regex and scorer are identical to the AIME25 rows above.",
+            "ref": "95.83% with DSpark on the fixed draft revision - exact parity, i.e. speculation is lossless"
           }
         ],
         "benchmarks": [
@@ -1481,7 +1531,8 @@ window.MODELS = [
         ],
         "vs_nvidia": [],
         "gotchas": [
-          "Turn DSpark OFF for long context - this is the sharpest knob on the page. Single-stream TPOT runs 9.43 / 15.20 / 48.93 / 221.49 ms at 1k / 8k / 32k / 131k input with DSpark, against 19.28 / 19.54 / 20.41 / 22.13 ms without it. The plain config is almost flat because only 24 of 93 layers carry a growing KV cache - the other 69 are constant-state KDA - so a 128x longer prompt costs 15% more per token. DSpark inverts from 2x faster to 10x slower over the same range because accept length collapses to 1.18-1.32 at 131k (accept rate 0.03): the 5-layer dense draft model cannot track that much context, so every step pays 8 target token-slots to land ~1.2 tokens. TTFT is unaffected either way (23.96 s vs 24.03 s at 131k) - speculative decoding does not touch prefill.",
+          "CORRECTED 2026-08-08: the long-context DSpark cliff was a draft-checkpoint bug, not a property of speculative decoding. The original reading here - accept length collapsing to 1.18-1.32 at 131k, DSpark inverting from 2x faster to 10x slower, blamed on \"the 5-layer dense draft model cannot track that much context\" - was measured on RadixArk/Kimi-K3-DSpark revision eb03982e, whose rope_parameters.rope_type is \"default\" despite a declared 1M context. On revision 56ce616a (YaRN, factor 16 over an original 65536 window) the collapse disappears: single-stream accept length is 3.79 / 3.87 / 3.88 / 3.84 / 3.66 at 1k / 8k / 16k / 32k / 64k against 3.84 / 3.72 / 2.99 / 2.04 / 1.47 before, and the throughput ratio goes 2.85x / 2.34x / 1.89x / 1.38x / 0.95x against 2.90x / 2.25x / 1.49x / 0.80x / 0.45x. DSpark now stays ahead through 32k and only reaches break-even at 64k. Pin the draft model by snapshot path, not by repo name: under HF_HUB_OFFLINE=1 a stale refs/main silently keeps resolving to the old revision even after the new one is downloaded. What still holds: the plain config is almost flat with length because only 24 of 93 layers carry a growing KV cache, and TTFT is unaffected either way since speculation does not touch prefill.",
+          "The residual decline with input length is real but has a different cause than accept length. With the fixed draft model accept length is flat across 1k-64k, yet the benefit still decays 2.85x -> 0.95x, because DSpark only accelerates decode: the longer the prompt, the larger the prefill share speculation cannot touch. That is dilution, not drafting failure, which is why the crossover tracks the ISL/OSL ratio rather than context length alone.",
           "This is the throughput answer whenever the batch is full or the traffic is sampled rather than greedy: 1695.74 vs DSpark's 1338.66 tok/s at concurrency 32 on the synthetic sweep, and 3.45x faster wall clock on the real AIME25 run (1964.1 s / 692 tok/s vs 6779.7 s / 188 tok/s). It also keeps max_running_requests at 368 with a 21.35 GB / 829,332-token KV pool. Below ~concurrency 8, or on greedy structured workloads like GSM8K, DSpark wins instead - see the low-latency cell.",
           "--mem-fraction-static 0.93, not the Day-0 0.85, and operate at concurrency 128. The Day-0 setting left 35.13 GB/GPU free after graph capture while the scheduler simultaneously reported full token usage 0.99 with requests queued - the KV pool was full and under-allocated at the same time. 0.93 lifts it from 838,048 to 1,292,032 tokens (+54%) and moves peak throughput from 6198 tok/s at concurrency 96 to 7892 tok/s at 128, i.e. +27% and 987 tok/s/GPU, reproduced across three runs at +/-0.35%. Read running/queued together to see the new ceiling: 128 is the largest batch the pool holds outright, and past it running pins at 138 while the queue grows, so extra clients buy latency rather than throughput.",
           "Do NOT raise --mem-fraction-static past 0.93 on this model, and do not validate a memory change with a boot check. 0.94 (9.35 GB free) and 0.95 (6.45 GB free) both start cleanly, serve /health and print a plausible available_gpu_mem, then die on the first heavy prefill. The allocation that fails is not attention but the aiter MXFP4 fused-MoE stage-2 output buffer: 'torch.OutOfMemoryError: HIP out of memory. Tried to allocate 1.75 GiB' from flydsl_moe_stage2. That buffer scales with tokens per forward pass, so it peaks at --chunked-prefill-size rather than at batch size, and K3's safe floor here is ~12 GB free after capture - well above the 5-8 GB the generic SGLang tuning guide suggests. Any mem-fraction or chunked-prefill change needs a real long-prefill load test.",
@@ -1520,10 +1571,16 @@ window.MODELS = [
         "cmd": "sgl-eval run mmmu_pro --base-url http://127.0.0.1:30000/v1 \\\n  --model moonshotai/Kimi-K3 --api-key EMPTY \\\n  --num-threads 32 --max-tokens 32000 --temperature 1.0 --top-p 0.95"
       },
       {
-        "title": "Day-0 image cross-check",
+        "title": "Published-image cross-check \u2014 done, and it moved to upstream",
         "kind": "strategy",
-        "note": "All numbers come from a source build. Re-running inside lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 would confirm the published image behaves identically - and whether it already carries the DSpark ROCm renorm fix or still dies on the first top_p batch.",
-        "cmd": "docker run -d --name k3-day0 \\\n  --device=/dev/kfd --device=/dev/dri --network=host --ipc=host \\\n  --group-add video --cap-add SYS_PTRACE --shm-size=32g \\\n  -v $HOME/hf-cache:/hf-cache -e HF_HOME=/hf-cache \\\n  lmsysorg/sglang-rocm:rocm720-mi35x-k3-20260727 sleep infinity\n\n# does the image still crash on non-greedy DSpark?\ncurl -s localhost:30000/v1/chat/completions \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"model\":\"moonshotai/Kimi-K3\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"temperature\":1.0,\"top_p\":0.95}'"
+        "note": "CLOSED 2026-08-08. The original Day-0 numbers came from a source build, so the open question was whether a published image behaves the same. It does, and the answer overtook the question: K3 is in upstream SGLang (#32541, 2026-08-04) and the dedicated MI35X nightly was retired the next day (#33689), so rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805 takes this cell's command with no fork and no patch. It is 10% faster than the fork build (8695 vs 7892 tok/s at 8192/1024 c128) and accuracy-neutral (GSM8K 97.60%, AIME26 95.83%). The DSpark renorm fix is upstream too - srt/speculative/dflash_utils.py now has an explicit is_hip() branch importing the triton renorm kernels - so dspark_rocm_renorm.patch is no longer needed on v0.5.16. What is still open is the 131k row: this pass measured to 64k, so the 131k cells above remain on the old draft revision.",
+        "cmd": "docker pull rocm/sgl-dev:v0.5.16-rocm720-mi35x-20260805\n\n# 131k on the fixed draft revision, the one row not yet re-taken\npython -m sglang.benchmark.serving --backend sglang \\\n  --base-url http://127.0.0.1:30000 --model moonshotai/Kimi-K3 \\\n  --dataset-name random --random-input-len 131072 --random-output-len 512 \\\n  --random-range-ratio 1 --num-prompts 8 --max-concurrency 1"
+      },
+      {
+        "title": "Is the accuracy parity robust at more repeats?",
+        "kind": "metric",
+        "note": "AIME26 is 95.83% both with and without DSpark on the fixed draft, which is the expected lossless result. But that is 30 problems x 4 repeats, where one problem is worth 3.33 pp, so the comparison can only resolve differences of a few points. The broken draft revision scored 90.00% on the same protocol and that gap did reproduce across all four repeats - worth re-checking at 8 or 16 repeats before treating small deltas on this eval as signal.",
+        "cmd": "python aime26_eval.py --base-url http://127.0.0.1:30000 \\\n  --data data/aime26.jsonl --repeat 16 --num-threads 32 --max-tokens 64000"
       },
       {
         "title": "MI300X (gfx942)",

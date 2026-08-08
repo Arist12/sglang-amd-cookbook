@@ -118,7 +118,7 @@ env `why`, gap notes): flags, `snake_case` names, file names, `org/repo` paths a
 
 ## Source playbooks
 
-- [Kimi-K3 on MI355X](kimi_k3_playbook.md) — Day-0 hybrid KDA/MLA MoE, MXFP4; plain + DSpark speculative decoding, GSM8K/AIME25 ([`test_kimi_k3.sh`](test_kimi_k3.sh), [`eval_kimi_k3.sh`](eval_kimi_k3.sh)) — plus a tuned recipe worth **+27%** throughput and **+68%** on DSpark, found by the search harness in [`grid_k3/`](grid_k3/README.md)
+- [Kimi-K3 on MI355X](kimi_k3_playbook.md) — Day-0 hybrid KDA/MLA MoE, MXFP4; plain + DSpark speculative decoding, GSM8K/AIME25 ([`test_kimi_k3.sh`](test_kimi_k3.sh), [`eval_kimi_k3.sh`](eval_kimi_k3.sh)) — plus a tuned recipe worth **+27%** throughput and **+68%** on DSpark, found by the search harness in [`grid_k3/`](grid_k3/README.md). Re-measured 2026-08-08 on the upstream `rocm/sgl-dev:v0.5.16` image (§2.0), which is ~10% faster and needs no fork or patch, and **corrected**: the long-context DSpark cliff was a draft-checkpoint RoPE bug (§5.4a), not a limit of speculative decoding. Extra harnesses from that pass: [`aime26_eval.py`](aime26_eval.py) (AIME26 is not in `run_eval`; inherits SGLang's AIME25 scorer), [`degeneracy_probe.py`](degeneracy_probe.py) (why `--dataset-name random` overstates accept length), [`prep_speedbench.py`](prep_speedbench.py) and [`prep_agentic_trace.py`](prep_agentic_trace.py)
 - [GLM-5.2-FP8 on MI300X](glm52_fp8_playbook.md) — DSA tilelang, FP8; GSM8K/AIME25 + long-context ([`test_glm52_fp8.sh`](test_glm52_fp8.sh))
 - [DeepSeek-V4-Flash on MI355X](dsv4_flash_playbook.md) ([`test_dsv4_flash.sh`](test_dsv4_flash.sh))
 - [Kimi-K2.6 on MI355X](kimi_k26_playbook.md) ([`test_kimi_k26.sh`](test_kimi_k26.sh))
