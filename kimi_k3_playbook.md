@@ -578,9 +578,26 @@ OSL 1024, radix cache off, `--dataset-name random`:
 | 16,384 | 2.99 | **3.88** | 1.49× | **1.89×** |
 | 32,768 | 2.04 | **3.84** | 0.80× | **1.38×** |
 | 65,536 | 1.47 | **3.66** | 0.45× | **0.95×** |
+| 131,072 | 1.18–1.32 | **3.60** | 0.26× † | **0.73×** |
 
-The collapse is gone: accept length is flat at 3.66–3.90 across the whole range.
-32k flips from a 20% loss to a 38% win, and 64k comes back to break-even.
+† the `eb03982e` 131k figure is from the OSL 512 rows in §5.4; the fixed-revision
+column is OSL 1024, so treat that one cell as indicative rather than a matched pair.
+
+The collapse is gone: accept length is flat at 3.60–3.90 across the whole range,
+including 131k, which is what YaRN's factor 16 over a 65536 window is there to
+cover. 32k flips from a 20% loss to a 38% win, and 64k comes back to break-even.
+
+**But DSpark still loses at 131k, for a different reason, and it is worth
+understanding because it is the one case where good accept length is not
+enough.** At 131k the fixed draft lands 3.60 tokens per step — near the window
+ceiling of 4 — and DSpark is *still* 0.73×, with TPOT going the wrong way
+(36.82 ms against 20.84 ms unspeculated). The verify step attends 4 candidate
+tokens against a 131k KV cache, and at that length attention dominates the step,
+so one verify costs close to 4 single-token decodes while returning 3.6 tokens.
+That is roughly break-even before the draft model's own forward pass, which
+tips it negative. Prefill dilution (above) explains the slope from 1k to 64k;
+this explains why the curve keeps falling after accept length has stopped
+moving.
 
 Two ways to keep running the broken revision by accident, both of which caught us:
 
@@ -651,7 +668,7 @@ writing) tiers. Single stream, radix cache on, fixed draft revision, on
 The ordering holds at every input length, and — with the draft model fixed —
 entropy is the *only* axis that moves accept length. Concurrency does not
 (3.84–3.92 across 1→64 concurrent at ISL 1k) and neither does context length
-(3.66–3.90 across 1k→64k). Those two axes still decay the *benefit*, through
+(3.60–3.90 across 1k→131k). Those two axes still decay the *benefit*, through
 compute saturation and prefill dilution respectively, but they do it without
 touching how well the draft guesses.
 
