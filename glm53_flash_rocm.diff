@@ -1,0 +1,354 @@
+diff --git a/python/sglang/kernels/ops/attention/dsa/tilelang_kernel.py b/python/sglang/kernels/ops/attention/dsa/tilelang_kernel.py
+index 4bd96eeccc..7915b8c6a5 100644
+--- a/python/sglang/kernels/ops/attention/dsa/tilelang_kernel.py
++++ b/python/sglang/kernels/ops/attention/dsa/tilelang_kernel.py
+@@ -862,6 +862,7 @@ def sparse_mla_fwd_decode_partial(
+     BI = block_I
+     D = dim
+     D_tail = tail_dim
++    has_tail = tail_dim > 0
+ 
+     q_shape = [batch, seq_len, heads, dim + tail_dim]
+     kv_shape = [batch, seq_len_kv, kv_group, dim + tail_dim]
+@@ -885,13 +886,16 @@ def sparse_mla_fwd_decode_partial(
+         with T.Kernel(seq_len * REPLICATE_H, N_GROUPS, threads=threads) as (bx, by):
+             if _q_in_shared:
+                 Q_buf = T.alloc_shared([H_per_block, D], dtype)
+-                Q_tail_buf = T.alloc_shared([H_per_block, D_tail], dtype)
++                if has_tail:
++                    Q_tail_buf = T.alloc_shared([H_per_block, D_tail], dtype)
+             else:
+                 Q_buf = T.alloc_fragment([H_per_block, D], dtype)
+-                Q_tail_buf = T.alloc_fragment([H_per_block, D_tail], dtype)
++                if has_tail:
++                    Q_tail_buf = T.alloc_fragment([H_per_block, D_tail], dtype)
+ 
+             KV_shared = T.alloc_shared([BI, D], dtype)
+-            K_tail_shared = T.alloc_shared([BI, D_tail], dtype)
++            if has_tail:
++                K_tail_shared = T.alloc_shared([BI, D_tail], dtype)
+             S_shared = T.alloc_shared([H_per_block, BI], dtype)
+             mask = T.alloc_fragment([BI], T.bool)
+ 
+@@ -914,7 +918,8 @@ def sparse_mla_fwd_decode_partial(
+             H1 = H0 + H_per_block
+ 
+             T.copy(Q[b_i, s_i, H0:H1, :D], Q_buf)
+-            T.copy(Q[b_i, s_i, H0:H1, D:], Q_tail_buf)
++            if has_tail:
++                T.copy(Q[b_i, s_i, H0:H1, D:], Q_tail_buf)
+ 
+             for k_i in T.Pipelined(inner_iter, num_stages=num_stages):
+                 topk_block_i = group_i * inner_iter + k_i
+@@ -926,11 +931,12 @@ def sparse_mla_fwd_decode_partial(
+                     KV_shared[bi_i, d_i] = KV[
+                         b_i, T.if_then_else(idx >= 0, idx, 0), g_i, d_i
+                     ]
+-                for bi_i, d_i in T.Parallel(BI, D_tail):
+-                    idx = Indices[b_i, s_i, g_i, topk_block_i * BI + bi_i]
+-                    K_tail_shared[bi_i, d_i] = KV[
+-                        b_i, T.if_then_else(idx >= 0, idx, 0), g_i, D + d_i
+-                    ]
++                if has_tail:
++                    for bi_i, d_i in T.Parallel(BI, D_tail):
++                        idx = Indices[b_i, s_i, g_i, topk_block_i * BI + bi_i]
++                        K_tail_shared[bi_i, d_i] = KV[
++                            b_i, T.if_then_else(idx >= 0, idx, 0), g_i, D + d_i
++                        ]
+ 
+                 for h_i, bi_i in T.Parallel(H_per_block, BI):
+                     acc_s[h_i, bi_i] = T.if_then_else(
+@@ -944,13 +950,14 @@ def sparse_mla_fwd_decode_partial(
+                     transpose_B=True,
+                     policy=T.GemmWarpPolicy.FullCol,
+                 )
+-                T.gemm(
+-                    Q_tail_buf,
+-                    K_tail_shared,
+-                    acc_s,
+-                    transpose_B=True,
+-                    policy=T.GemmWarpPolicy.FullCol,
+-                )
++                if has_tail:
++                    T.gemm(
++                        Q_tail_buf,
++                        K_tail_shared,
++                        acc_s,
++                        transpose_B=True,
++                        policy=T.GemmWarpPolicy.FullCol,
++                    )
+ 
+                 T.copy(m_i, m_i_prev)
+                 T.reduce_max(acc_s, m_i, dim=1, clear=False)
+diff --git a/python/sglang/srt/layers/attention/dsa/dsa_indexer_kpool.py b/python/sglang/srt/layers/attention/dsa/dsa_indexer_kpool.py
+index 2cc6a6c477..a32bfdc41e 100644
+--- a/python/sglang/srt/layers/attention/dsa/dsa_indexer_kpool.py
++++ b/python/sglang/srt/layers/attention/dsa/dsa_indexer_kpool.py
+@@ -14,6 +14,9 @@ from sglang.srt.layers.attention.dsa.dsa_indexer import (
+     rotate_activation,
+ )
+ from sglang.srt.layers.attention.dsa.dsa_topk_backend import TopkTransformMethod
++from sglang.srt.layers.attention.dsa.paged_mqa_logits_backend import (
++    DSAPagedMQALogitsBackend,
++)
+ from sglang.srt.layers.layernorm import LayerNorm
+ from sglang.srt.layers.utils import MultiPlatformOp
+ from sglang.srt.utils import add_prefix, ceil_align, is_cuda, is_hip, is_npu
+@@ -46,7 +49,34 @@ from sglang.srt.model_executor.forward_context import (
+     get_token_to_kv_pool,
+ )
+ from sglang.srt.model_executor.runner import get_is_capture_mode
+-from sglang.srt.runtime_context import get_parallel, get_server_args
++from sglang.srt.runtime_context import get_exec, get_parallel, get_server_args
++
++
++_is_hip = is_hip()
++
++
++def _fp8_mqa_logits(
++    q_fp8: torch.Tensor,
++    kv_fp8,
++    weights: torch.Tensor,
++    ks: torch.Tensor,
++    ke: torch.Tensor,
++    *,
++    clean_logits: bool,
++) -> torch.Tensor:
++    # DeepGEMM has no ROCm build, so HIP uses aiter's Triton kernel. It takes the
++    # (kv, scale) pair unpacked and needs no head padding, matching how
++    # dsa_indexer.py routes the same call.
++    if _is_hip:
++        from aiter.ops.triton.fp8_mqa_logits import fp8_mqa_logits
++
++        kv, scale = kv_fp8
++        return fp8_mqa_logits(
++            q_fp8, kv, scale, weights, ks, ke, clean_logits=clean_logits
++        )
++    return deep_gemm.fp8_mqa_logits(
++        q_fp8, kv_fp8, weights, ks, ke, clean_logits=clean_logits
++    )
+ 
+ if TYPE_CHECKING:
+     from sglang.srt.mem_cache.memory_pool import DSATokenToKVPool
+@@ -119,6 +149,15 @@ class IndexerKPool(MultiPlatformOp):
+         if is_cuda():
+             self.sm_count = deep_gemm.get_num_sms()
+             self.half_device_sm_count = ceil_align(self.sm_count // 2, 8)
++        elif _is_hip:
++            self.sm_count = torch.cuda.get_device_properties(
++                torch.cuda.current_device()
++            ).multi_processor_count
++            self.half_device_sm_count = ceil_align(self.sm_count // 2, 8)
++
++        self.paged_mqa_logits_backend = DSAPagedMQALogitsBackend.resolve(
++            get_exec().kernel.dsa_paged_mqa_logits_backend
++        )
+ 
+         self.wq_b = ReplicatedLinear(
+             self.q_lora_rank,
+@@ -869,6 +908,9 @@ class IndexerKPool(MultiPlatformOp):
+         if n_real < num_q_padded:
+             q_fp8 = q_fp8[:n_real]
+             weights = weights[:n_real]
++        # aiter's paged MQA logits does its own next_n unsqueeze so it needs q 3D;
++        # it takes the same 4D kv view as DeepGEMM and tilelang.
++        q_fp8_3d = q_fp8
+         q_fp8 = q_fp8.unsqueeze(1)  # the next_n dim is 1 now
+         assert len(kv_cache_fp8.shape) == 2
+         block_kv = 64
+@@ -879,7 +921,11 @@ class IndexerKPool(MultiPlatformOp):
+         )
+         assert len(weights.shape) == 3
+         weights = weights.squeeze(2)
+-        use_tilelang_paged_mqa = self._should_use_tilelang_paged_mqa_logits(q_fp8)
++        use_aiter_paged_mqa = self.paged_mqa_logits_backend.is_aiter()
++        use_tilelang_paged_mqa = (
++            not use_aiter_paged_mqa
++            and self._should_use_tilelang_paged_mqa_logits(q_fp8)
++        )
+ 
+         pool_seqlens, pool_context_lens, pool_block_tables, pool_schedule_metadata = (
+             self._get_kpool_decode_metadata(
+@@ -887,11 +933,29 @@ class IndexerKPool(MultiPlatformOp):
+                 block_tables,
+                 seqlens_32,
+                 blocksize,
+-                build_schedule_metadata=not use_tilelang_paged_mqa,
++                build_schedule_metadata=not (
++                    use_tilelang_paged_mqa or use_aiter_paged_mqa
++                ),
+             )
+         )
+         pool_max_seq_len = pool_block_tables.shape[1] * blocksize
+-        if use_tilelang_paged_mqa:
++        if use_aiter_paged_mqa:
++            from sglang.kernels.ops.attention.dsa import aiter_paged_mqa_logits
++            from sglang.srt.layers.attention.dsa.utils import (
++                aiter_can_use_preshuffle_paged_mqa,
++            )
++
++            logits = aiter_paged_mqa_logits(
++                q_fp8_3d,
++                kv_cache_fp8,
++                weights,
++                pool_seqlens,
++                pool_block_tables,
++                pool_max_seq_len,
++                preshuffle=aiter_can_use_preshuffle_paged_mqa(),
++                kv_block_size=blocksize,
++            )
++        elif use_tilelang_paged_mqa:
+             from sglang.kernels.ops.attention.dsa.tilelang_kernel import (
+                 tilelang_fp8_paged_mqa_logits,
+             )
+@@ -1001,7 +1065,7 @@ class IndexerKPool(MultiPlatformOp):
+                 scale_out=k_scale,
+             )
+             k_fp8 = k_u8.view(torch.float8_e4m3fn)
+-            logits = deep_gemm.fp8_mqa_logits(
++            logits = _fp8_mqa_logits(
+                 q_fp8[:n_real].contiguous(),
+                 (k_fp8.contiguous(), k_scale.contiguous()),
+                 weights[:n_real].contiguous(),
+@@ -1115,7 +1179,7 @@ class IndexerKPool(MultiPlatformOp):
+             ke = torch.div(tail_tokens, pool_size, rounding_mode="floor").to(
+                 torch.int32
+             )
+-            logits = deep_gemm.fp8_mqa_logits(
++            logits = _fp8_mqa_logits(
+                 q_work,
+                 (k_fp8.contiguous(), k_scale.contiguous()),
+                 weights_work,
+@@ -1349,7 +1413,7 @@ class IndexerKPool(MultiPlatformOp):
+                     and zero_starts_by_batch[i] is not None
+                     else torch.zeros((q_len,), dtype=torch.int32, device=q_fp8.device)
+                 )
+-                local_logits = deep_gemm.fp8_mqa_logits(
++                local_logits = _fp8_mqa_logits(
+                     q_fp8[q_slice].contiguous(),
+                     (k_fp8.contiguous(), k_scale.contiguous()),
+                     weights[q_slice].contiguous(),
+@@ -1697,7 +1761,7 @@ class IndexerKPool(MultiPlatformOp):
+         if weights is None:
+             weights = self._get_logits_head_gate(x, q_scale)
+ 
+-        if is_cuda():
++        if is_cuda() or _is_hip:
+             if (
+                 forward_batch.forward_mode.is_decode_or_idle()
+                 or forward_batch.forward_mode.is_target_verify()
+@@ -1763,5 +1827,7 @@ class IndexerKPool(MultiPlatformOp):
+                         kpool_extend_cache=kpool_extend_cache,
+                     )
+         else:
+-            raise NotImplementedError("kpool indexer is only supported on CUDA")
++            raise NotImplementedError(
++                "kpool indexer is only supported on CUDA and ROCm"
++            )
+         return topk_result
+diff --git a/python/sglang/srt/layers/attention/dsa/kpool_fp8_index.py b/python/sglang/srt/layers/attention/dsa/kpool_fp8_index.py
+index 6d290a091c..2196c463d0 100644
+--- a/python/sglang/srt/layers/attention/dsa/kpool_fp8_index.py
++++ b/python/sglang/srt/layers/attention/dsa/kpool_fp8_index.py
+@@ -4,8 +4,48 @@ import torch
+ import triton
+ import triton.language as tl
+ 
++from sglang.srt.utils import is_hip
++
++_is_hip = is_hip()
++
+ BLOCK_SIZE_K = 64
+ INDEX_HEAD_DIM = 128
++
++
++def _group_topk_torch(
++    score: torch.Tensor,
++    lengths: torch.Tensor,
++    topk: int,
++    row_starts: Optional[torch.Tensor] = None,
++) -> torch.Tensor:
++    """Portable stand-in for sgl_kernel.fast_topk_v2, which hardcodes topk=2048.
++
++    Selects the top `topk` columns of each row within
++    [row_starts[i], row_starts[i] + lengths[i]), descending by score, as int32
++    absolute column indices. Shapes are static, so this is CUDA-graph capturable.
++    """
++    rows, cols = score.shape
++    positions = torch.arange(cols, device=score.device).unsqueeze(0)
++    lo = (
++        torch.zeros_like(lengths)
++        if row_starts is None
++        else row_starts.to(lengths.dtype)
++    )
++    lo = lo.unsqueeze(1)
++    hi = lo + lengths.unsqueeze(1)
++    in_range = (positions >= lo) & (positions < hi)
++    masked = score.masked_fill(~in_range, float("-inf"))
++
++    k = min(topk, cols)
++    selected = masked.topk(k, dim=-1, largest=True, sorted=True).indices.to(
++        torch.int32
++    )
++    if k == topk:
++        return selected
++    padding = torch.full(
++        (rows, topk - k), -1, dtype=torch.int32, device=score.device
++    )
++    return torch.cat([selected, padding], dim=-1)
+ KPOOL_SCORE_DTYPES = (torch.float16, torch.bfloat16, torch.float32)
+ 
+ 
+@@ -591,7 +631,9 @@ def topk_from_pooled_history_logits(
+             f"is disabled. Got device={logits.device}, dtype={logits.dtype}."
+         )
+ 
+-    if group_topk in (128, 160, 192, 224, 256, 512):
++    # The fused kernel is a CUDA JIT module (<cuda_fp16.h>); HIP falls through to
++    # the portable fast_topk_v2 + Triton path below.
++    if group_topk in (128, 160, 192, 224, 256, 512) and not _is_hip:
+         from sglang.kernels.ops.moe.kpool_topk_transform import (
+             fast_kpool_topk_transform_fused,
+         )
+@@ -615,18 +657,30 @@ def topk_from_pooled_history_logits(
+         padded[: result.shape[0]] = result
+         return padded
+ 
+-    assert (
+-        page_table_row_index is None
+-    ), "page_table_row_index requires the fused fast_kpool group_topk path"
+-
+-    from sgl_kernel import fast_topk_v2
++    if page_table_row_index is not None:
++        # Materialize what the fused kernel gathers internally; the portable path
++        # below indexes page_table positionally.
++        assert page_table is not None
++        page_table = page_table.index_select(0, page_table_row_index.to(torch.long))
++        page_table_row_index = None
++
++    if _is_hip:
++        # fast_topk_v2 asserts topk==2048; group_topk here is 512 for GLM-5.3-Flash.
++        selected_groups = _group_topk_torch(
++            logits,
++            group_lengths.to(torch.int32),
++            group_topk,
++            row_starts=row_starts,
++        )
++    else:
++        from sgl_kernel import fast_topk_v2
+ 
+-    selected_groups = fast_topk_v2(
+-        logits,
+-        group_lengths.to(torch.int32),
+-        group_topk,
+-        row_starts=row_starts,
+-    )
++        selected_groups = fast_topk_v2(
++            logits,
++            group_lengths.to(torch.int32),
++            group_topk,
++            row_starts=row_starts,
++        )
+ 
+     rank = torch.arange(group_topk, device=logits.device, dtype=torch.int32)
+     max_valid_groups = min(cols, group_topk)

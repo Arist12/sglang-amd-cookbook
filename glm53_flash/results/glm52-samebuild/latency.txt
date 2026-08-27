@@ -1,0 +1,47 @@
+bash: /opt/venv/lib/python3.12/site-packages/torch/lib/libtinfo.so.6: no version information available (required by bash)
+[aiter] import [module_aiter_core] under /sgl-workspace/aiter/aiter/jit/module_aiter_core.so
+[aiter] merge tuned file under model_configs/ and configs/ /sgl-workspace/aiter/aiter/configs/bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv3_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/dsv4_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm47_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/glm5_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/gptoss_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimi_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik2_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/kimik3_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama405B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/llama70B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/minimax_m3_eagle_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen32B_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen3_5_397b_bf16_tuned_gemm.csv:/sgl-workspace/aiter/aiter/configs/model_configs/qwen3_8b_bf16_tuned_gemm.csv
+/sgl-workspace/sglang/python/sglang/bench_one_batch_server.py:14: FutureWarning: `sglang.bench_one_batch_server` is deprecated and will be removed in a future release; use `sglang.benchmark.one_batch_server` instead (e.g. `python -m sglang.benchmark.one_batch_server`).
+  warnings.warn(
+[transformers] The following generation flags are not valid and may be ignored: ['top_p']. Set `TRANSFORMERS_VERBOSITY=info` for more details.
+Setting page size to 64 for DeepSeek DSA.
+Set dense attention kv len threshold to model index_topk=2048 for DeepSeek with DSA.
+Setting KV cache dtype to bfloat16 for DeepSeek DSA on SM9 device.
+Set DSA backends for bfloat16 KV Cache: prefill=tilelang, decode=tilelang.
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+max_running_requests_per_dp=64
+dp_size=1
+skip_max_running_requests_threshold=64
+skip_token_capacity_threshold=1692864
+#Input tokens: 1024
+#Output tokens: 1024
+batch size: 1
+input_len: 1024
+output_len: 1024
+latency: 12.33 s
+input throughput: 7594.22 tok/s
+output throughput: 83.97 tok/s
+last_ttft: 0.13 s
+last generation throughput: 83.86 tok/s
+#Input tokens: 8192
+#Output tokens: 1024
+batch size: 1
+input_len: 8192
+output_len: 1024
+latency: 14.92 s
+input throughput: 4805.96 tok/s
+output throughput: 77.51 tok/s
+last_ttft: 1.70 s
+last generation throughput: 77.38 tok/s
+#Input tokens: 16384
+#Output tokens: 1024
+batch size: 1
+input_len: 16384
+output_len: 1024
+latency: 14.53 s
+input throughput: 14080.76 tok/s
+output throughput: 76.62 tok/s
+last_ttft: 1.16 s
+last generation throughput: 76.46 tok/s
+
+Results are saved to /results/bench/glm52-samebuild/latency.jsonl
