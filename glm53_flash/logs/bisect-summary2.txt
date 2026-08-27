@@ -1,0 +1,13 @@
+################ moe-triton2 ################
+   env: MOE_BACKEND=triton EXTRA_ENV=SGLANG_OPT_SWIGLU_CLAMP_FUSION=0
+  LAUNCH FAILED
+################ aiter-off ################
+   env: EXTRA_ENV=SGLANG_USE_AITER=0 SGLANG_OPT_SWIGLU_CLAMP_FUSION=0
+==========================================================================
+>>> NONDETERMINISTIC: 21 distinct results across 3 prompts x 8 repeats (deterministic would be 3).
+################ aiter-off ################
+   env: EXTRA_ENV=SGLANG_USE_AITER=0 SGLANG_OPT_SWIGLU_CLAMP_FUSION=0
+==========================================================================
+>>> NONDETERMINISTIC: 18 distinct results across 3 prompts x 8 repeats (deterministic would be 3).
+==========================================================================
+>>> NONDETERMINISTIC: 24 distinct results across 3 prompts x 8 repeats (deterministic would be 3).

@@ -256,20 +256,85 @@ correct, decode is broken" came from one lucky sample and did not survive a cont
 re-run. Second, **the measurement to bisect against is repeat-count of distinct
 outputs, not whether one output looks right** (`determinism_probe.py`).
 
+### The nondeterminism is benign noise plus catastrophic amplification
+
+A later round of per-module tensor dumps and an isolated kernel reproducer changed this
+diagnosis, so read the preceding subsection as symptoms and this one as the finding.
+
+**Localization.** `--debug-tensor-dump-output-folder` was used to capture every leaf
+module's output on two identical single-token prefills, then diffed
+([`glm53_flash/diff_dumps.py`](glm53_flash/diff_dumps.py),
+[`glm53_flash/inspect_layer3.py`](glm53_flash/inspect_layer3.py)). Result:
+
+- layers 0, 1, 2 — every module bitwise identical. These are the `first_k_dense_replace`
+  dense-MLP layers, and their KDA attention internals agree exactly.
+- layer 3, the first MoE layer and the first DSA layer — all eight `self_attn` modules
+  bitwise identical, including `attn_mha`, `indexer.wk`, `indexer.k_norm` and
+  `kv_b_proj`; `mlp.gate` identical; `mlp.topk[0..2]` identical, so routing agrees
+  exactly; `mlp.shared_experts.*` identical; and **`mlp.experts` differs**, 13,672 of
+  69,632 elements.
+
+Identical inputs, identical routing, different routed-expert output. That exonerates
+KDA, DSA/kpool including the indexer, mHC and the router as the *source*.
+
+**But the magnitude is one bit.** 73.9% of those divergences are exactly one bf16 ULP,
+median exactly 1.00 ULP, largest absolute difference 0.015625 on an output whose mean
+magnitude is 0.20. And an isolated reproducer
+([`glm53_flash/repro_aiter_moe_nondet.py`](glm53_flash/repro_aiter_moe_nondet.py))
+calling `aiter.fused_moe.fused_moe` twice on identical synthetic inputs finds it
+nondeterministic at ~1e-7 (fp32 last-bit) for **both** models' per-rank shapes —
+GLM-5.3-Flash (E=36, h=4096) and the deterministic GLM-5.2 control (E=32, h=6144) —
+at `splitk` 0, 1 and 2 alike.
+
+So the MoE reduction noise is ordinary, expected, and shared. **The defect is that
+GLM-5.3-Flash amplifies one ULP into a different token while GLM-5.2 does not.** With
+top-1 probability sitting at 0.08-0.22 on `"The capital of France is"`, the model is
+plausibly in a degenerate regime where a separate *deterministic* numerical error has
+flattened the logits enough for last-bit noise to decide the argmax. That also fits the
+output being fluent-shaped rather than uniformly broken.
+
+Consequence for the exclusion table above: those toggles establish that mHC, KDA, aiter
+as a whole, prefix/state reuse, CUDA graph, `gate_mode`, `splitk`, MoE padding and the
+clamp fusion are not the *noise source*. They do **not** exonerate any of them as the
+amplifier or as the site of the deterministic error.
+
+Also ruled out along the way, each by measurement: the aiter MoE `swiglu_limit`
+branch — GLM-5.3-Flash enters `elif quant_info.swiglu_limit > 0` (10.0) while GLM-5.2
+does not, and that branch's own comment says it exists for the gpt-oss MXFP4 layout
+rather than FP8 block-quant, yet `GateMode.INTERLEAVE`, `GateMode.SEPARATED` and a
+diagnostic patch bypassing the branch entirely all leave the behaviour unchanged.
+Note also that `SGLANG_USE_AITER=0` never touched the MoE runner, because
+`--moe-runner-backend aiter` was passed explicitly; the earlier "aiter as a whole"
+exclusion is weaker than it looks.
+
 ### Where to look next
 
-Narrowed to GLM-5.3-only surface, in descending suspicion:
+Chasing the nondeterministic component was the wrong frame; the source is benign. The
+question to answer is where a **deterministic** numerical error flattens the logits, and
+determinism probes cannot find that. The next step is a correctness comparison, not
+another bisection: run the same weights through a reference implementation and diff
+layer by layer to find the first module that is systematically wrong rather than merely
+last-bit unstable. The tensor-dump harness already in place does the diffing; what it
+needs is a trustworthy reference for the same inputs.
 
-1. The kpool compress-and-write path (`kpool_softmax_rotate_write_cache`): four tokens
-   are folded into one pooled cache entry, a natural place for a write race that would
-   be nondeterministic, large-magnitude, present in both prefill and decode, and absent
-   from every other model.
-2. KDA at this checkpoint's specific head geometry and with `lower_bound` active — the
-   upstream kernel tests pass but do not obviously cover this configuration, and KDA
-   has no AMD CI coverage ([#19324](https://github.com/sgl-project/sglang/pull/19324)
-   still open) plus an open ROCm hang report
+Candidate sites for that deterministic error, in descending suspicion:
+
+1. mHC. `hc_mult=4` with `hc_sinkhorn_iters=20` is a normalization fixed point applied
+   at every layer, and Sinkhorn iteration is exactly the kind of construct that turns a
+   small input perturbation into a large output one. It is also GLM-5.3-only, so it fits
+   the GLM-5.2 contrast. Switching to the torch reference did not restore determinism,
+   but that only rules mHC out as the noise source, not as the amplifier — and note the
+   standalone probe of `_mhc_pre_torch` could not be completed because the kernel
+   requires an initialized TP group, so the torch path itself is unverified.
+2. The kpool compress-and-write path (`kpool_softmax_rotate_write_cache`): four tokens
+   folded into one pooled cache entry. Layer 3's indexer outputs were bitwise identical
+   on the pair examined, which weakens this, but identical is not the same as correct.
+3. KDA at this checkpoint's head geometry with `lower_bound` active — upstream kernel
+   tests pass but do not obviously cover this configuration, and KDA has no AMD CI
+   coverage ([#19324](https://github.com/sgl-project/sglang/pull/19324) still open) plus
+   an open ROCm hang report
    ([#33846](https://github.com/sgl-project/sglang/issues/33846)).
-3. `glm5_next.py` itself — note that its one gfx950-specific path, the
+4. `glm5_next.py` itself — note that its one gfx950-specific path, the
    `rocm_linear_utils` zero-allocator, is gated on `n_routed_experts == 256` while this
    model has 288, so it never activates.
 

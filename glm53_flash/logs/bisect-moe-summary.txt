@@ -1,0 +1,12 @@
+################ noclamp ################
+   EXTRA_ENV=SGLANG_OPT_SWIGLU_CLAMP_FUSION=0
+==========================================================================
+>>> NONDETERMINISTIC: 18 distinct results across 3 prompts x 6 repeats (deterministic would be 3).
+################ nopadding ################
+   EXTRA_ENV=SGLANG_MOE_PADDING=0
+==========================================================================
+>>> NONDETERMINISTIC: 18 distinct results across 3 prompts x 6 repeats (deterministic would be 3).
+################ noclamp-nopad ################
+   EXTRA_ENV=SGLANG_OPT_SWIGLU_CLAMP_FUSION=0 SGLANG_MOE_PADDING=0
+==========================================================================
+>>> NONDETERMINISTIC: 15 distinct results across 3 prompts x 6 repeats (deterministic would be 3).

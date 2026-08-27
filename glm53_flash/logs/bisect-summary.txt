@@ -1,0 +1,12 @@
+################ moe-triton ################
+  LAUNCH FAILED - see logs/serve-bisect-moe-triton.log
+AssertionError: fused silu_and_mul_clamp kernel is CUDA/XPU only; HIP must disable SWIGLU_CLAMP_FUSION
+AssertionError: fused silu_and_mul_clamp kernel is CUDA/XPU only; HIP must disable SWIGLU_CLAMP_FUSION
+################ mhc-torch ################
+
+==========================================================================
+>>> NONDETERMINISTIC: 22 distinct results across 3 prompts x 8 repeats (deterministic would be 3).
+################ rope-noaiter ################
+
+==========================================================================
+>>> NONDETERMINISTIC: 24 distinct results across 3 prompts x 8 repeats (deterministic would be 3).
