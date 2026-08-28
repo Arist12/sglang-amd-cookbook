@@ -1,0 +1,85 @@
+{
+  "run_id": "20260827T233110Z",
+  "gsm8k": {
+    "protocol": {
+      "harness": "sglang.test.run_eval",
+      "requested_examples": 1319,
+      "materialized_examples": 1314,
+      "thinking_mode": "glm-45",
+      "temperature": 0,
+      "max_tokens": 8192,
+      "threads": 32
+    },
+    "glm53": {
+      "correct": 1281,
+      "score": 0.9748858447488584,
+      "latency_seconds": 219.02931567499945,
+      "output_throughput_tps": 1160.1643333308589,
+      "started_utc": "2026-08-28T00:57:42Z",
+      "finished_utc": "2026-08-28T01:01:32Z"
+    },
+    "glm52": {
+      "correct": 1281,
+      "score": 0.9748858447488584,
+      "latency_seconds": 773.1758605189971,
+      "output_throughput_tps": 1222.273027724435,
+      "started_utc": "2026-08-28T03:48:58Z",
+      "finished_utc": "2026-08-28T04:02:03Z"
+    }
+  },
+  "aime25": {
+    "protocol": {
+      "harness": "sgl-eval 0.0.1",
+      "nemo_skills_commit": "645cf567ff08c0ae9cc3fc8e1edbb975b3067816",
+      "examples": 30,
+      "repeats": 16,
+      "samples": 480,
+      "thinking": true,
+      "temperature": 1.0,
+      "top_p": 0.95,
+      "max_tokens": 64000,
+      "threads": 32
+    },
+    "glm53": {
+      "pass_at_1": 0.9375,
+      "pass_at_1_sem": 0.004166666666666666,
+      "pass_at_16": 1.0,
+      "majority_at_16": 1.0,
+      "stop_rate": 0.9604166666666667,
+      "truncated_rate": 0.03958333333333333,
+      "no_answer_rate": 0.03958333333333333,
+      "error_rate": 0.0,
+      "latency_seconds": 2564.032765705,
+      "output_throughput_tps": 2109.010490165537,
+      "total_completion_tokens": 5407572,
+      "started_utc": "2026-08-28T01:01:56Z",
+      "finished_utc": "2026-08-28T01:44:41Z"
+    },
+    "glm52": {
+      "pass_at_1": 0.9083333333333333,
+      "pass_at_1_sem": 0.008871510790372948,
+      "pass_at_16": 1.0,
+      "majority_at_16": 0.95,
+      "stop_rate": 0.9979166666666667,
+      "truncated_rate": 0.0020833333333333333,
+      "no_answer_rate": 0.00625,
+      "error_rate": 0.0,
+      "latency_seconds": 7228.686650641001,
+      "output_throughput_tps": 1283.125337737183,
+      "total_completion_tokens": 9275311,
+      "started_utc": "2026-08-28T04:02:18Z",
+      "finished_utc": "2026-08-28T06:02:47Z"
+    },
+    "difference": {
+      "glm53_minus_glm52_percentage_points": 2.916666666666667,
+      "combined_standard_errors": 2.975
+    }
+  },
+  "determinism": {
+    "protocol": "3 prompts x 8 serial greedy repeats; cache flush before every request",
+    "glm53_aiter_moe_distinct_strings": 6,
+    "glm53_triton_moe_distinct_strings": 3,
+    "glm52_aiter_moe_distinct_strings": 3,
+    "deterministic_target": 3
+  }
+}

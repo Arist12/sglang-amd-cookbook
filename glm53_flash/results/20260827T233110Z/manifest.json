@@ -1,0 +1,187 @@
+{
+  "run_id": "20260827T233110Z",
+  "status": "complete",
+  "started_utc": "2026-08-27T23:31:10Z",
+  "last_measurement_finished_utc": "2026-08-28T06:02:47Z",
+  "final_pr_status_snapshot_utc": "2026-08-28T06:29:56Z",
+  "node": "mia1-p02-g46.mia.tensorwave.lan",
+  "hardware": {
+    "gpu": "AMD Instinct MI355X",
+    "gfx": "gfx950",
+    "count": 8,
+    "vram_bytes_per_gpu": 309220868096
+  },
+  "image": "rocm/sgl-dev:v0.5.18-rocm724-mi35x-20260826",
+  "software": {
+    "torch": "2.11.0+rocm7.2",
+    "hip": "7.2.26015",
+    "sglang_version": "0.5.18.dev20260826+g937af8538b",
+    "sglang_measured_commit": "9d208769398882e20220cb97722bf610397e66d8",
+    "sglang_local_patch": {
+      "path": "glm53_flash/hybrid_fp8_metadata.patch",
+      "sha256": "b6c88a721c1a952f55e5ebc92dab508d767d7ef1f53cc968ae601966cb472200"
+    },
+    "aiter_image_commit": "c16d44b93a528b2a4bfd6d8d3409116d465872a9",
+    "aiter_tuning_commit": "95565e33c8287a8c56bc31a84edf2de3ecc97662",
+    "aiter_tuning_sha256": "bc4c88d602e773f0bbb13cdaaf8650dfbaa7a506bbc987c77fe57e13aa0df90c",
+    "sgl_eval_version": "0.0.1",
+    "nemo_skills_commit": "645cf567ff08c0ae9cc3fc8e1edbb975b3067816"
+  },
+  "models": {
+    "glm53": {
+      "id": "zai-org/GLM-5.3-Flash",
+      "revision": "04c4e9e95c5da8862dced7e5056455116f83a7e0",
+      "checkpoint_bytes": 328326771576,
+      "weight_stream_bytes_per_decode": 22415000000,
+      "effective_bytes_per_advertised_active_parameter": 1.25
+    },
+    "glm52": {
+      "id": "zai-org/GLM-5.2-FP8",
+      "local_path": "/models/GLM-5.2-FP8",
+      "config_sha256": "22e49334abf8562fecf70ca3292ba3f5b33f5602fb2bf10b52dd64a66cfe65ff",
+      "index_sha256": "e0fe7f28c1f853d4824e4d796374e3dacf1fe470988773952c79b063768134bf",
+      "checkpoint_bytes": 755617140416,
+      "weight_stream_bytes_per_decode": 41383000000,
+      "effective_bytes_per_advertised_active_parameter": 1.06
+    }
+  },
+  "dependencies": [
+    {
+      "role": "model support",
+      "url": "https://github.com/sgl-project/sglang/pull/36507",
+      "freeze": {
+        "state": "OPEN",
+        "head": "c4d5d45e506dcd978a65661a503eda1a272c39a4",
+        "observed_updated_at": "2026-08-27T20:12:54Z"
+      },
+      "final": {
+        "state": "OPEN",
+        "head": "aa8c950a3df62b6642c4ea60a93a5e3eb1a1450e",
+        "observed_updated_at": "2026-08-28T03:51:19Z"
+      },
+      "applied_commit": "9d208769398882e20220cb97722bf610397e66d8"
+    },
+    {
+      "role": "AMD ROCm enablement and optimization",
+      "url": "https://github.com/sgl-project/sglang/pull/36607",
+      "freeze": {
+        "state": "OPEN",
+        "head": "9d208769398882e20220cb97722bf610397e66d8",
+        "observed_updated_at": "2026-08-27T21:26:38Z"
+      },
+      "final": {
+        "state": "MERGED",
+        "head": "c821c425c31b0e6c8151324b60fbc2857c39eaef",
+        "merged_at": "2026-08-28T03:51:01Z",
+        "merge_target": "xinyuan/glm-5.3-flash-support"
+      },
+      "applied_commit": "9d208769398882e20220cb97722bf610397e66d8"
+    },
+    {
+      "role": "gfx950 GLM-5.3 BF16 GEMM tuning",
+      "url": "https://github.com/ROCm/aiter/pull/5060",
+      "freeze": {
+        "state": "OPEN",
+        "head": "95565e33c8287a8c56bc31a84edf2de3ecc97662",
+        "observed_updated_at": "2026-08-27T21:24:44Z"
+      },
+      "final": {
+        "state": "OPEN",
+        "head": "95565e33c8287a8c56bc31a84edf2de3ecc97662",
+        "observed_updated_at": "2026-08-28T04:27:14Z"
+      },
+      "applied_commit": "95565e33c8287a8c56bc31a84edf2de3ecc97662"
+    },
+    {
+      "role": "upstream recipe reference",
+      "url": "https://github.com/sgl-project/sglang/pull/36732",
+      "freeze": {
+        "state": "OPEN",
+        "head": "8c0d81f9cf30d3f7826ca473198fb37ce289c7a2",
+        "observed_updated_at": "2026-08-27T21:25:15Z"
+      },
+      "final": {
+        "state": "OPEN",
+        "head": "8c0d81f9cf30d3f7826ca473198fb37ce289c7a2",
+        "observed_updated_at": "2026-08-27T21:25:15Z"
+      },
+      "applied_commit": null
+    }
+  ],
+  "runtime": {
+    "glm53": {
+      "tp": 8,
+      "ep": 1,
+      "kv_cache_dtype": "fp8_e4m3",
+      "dsa_backend": "tilelang",
+      "linear_attention_backend": "triton",
+      "moe_runner_backend": "aiter",
+      "decode_graph_batch_sizes": [1, 32],
+      "prefill_graphs": false,
+      "radix_cache": false,
+      "chunked_prefill_size": 8192,
+      "max_running_requests": 64,
+      "weight_gb_per_rank": 38.016,
+      "kv_cache_gb_per_rank": 211.164,
+      "kv_token_capacity": 32006720,
+      "mamba_state_slots": 64,
+      "startup_seconds": 86.106
+    },
+    "glm52": {
+      "tp": 8,
+      "kv_cache_dtype": "fp8_e4m3",
+      "dsa_backend": "tilelang",
+      "chunked_prefill_size": 8192,
+      "cuda_graph_max_batch_size": 64,
+      "radix_cache": true,
+      "schedule_policy": "lpm",
+      "num_continuous_decode_steps": 2,
+      "max_running_requests": 64,
+      "weight_gb_per_rank": 88.742,
+      "kv_cache_gb_per_rank": 165.755,
+      "kv_token_capacity": 3731136,
+      "startup_seconds": 938.420
+    }
+  },
+  "correctness_gates": {
+    "glm53_gsm8k_100": {
+      "score": 0.99,
+      "passed": true
+    },
+    "glm53_aiter_exact_determinism": {
+      "distinct_strings": 6,
+      "deterministic_target": 3,
+      "passed": false
+    },
+    "glm53_triton_moe_exact_determinism": {
+      "distinct_strings": 3,
+      "deterministic_target": 3,
+      "passed": true
+    },
+    "glm52_aiter_exact_determinism": {
+      "distinct_strings": 3,
+      "deterministic_target": 3,
+      "passed": true
+    }
+  },
+  "observed_failures": [
+    {
+      "scope": "GLM-5.3 concurrent variable-prefix FP8 KV",
+      "failure": "HybridLinearAttnBackend has no forward_metadata",
+      "resolution": "hybrid_fp8_metadata.patch",
+      "validated_by": "GSM8K-100, full GSM8K, AIME25 and all performance points"
+    },
+    {
+      "scope": "GLM-5.2 published 32768-token prefill chunk on this 0.5.18 stack",
+      "failure": "Triton/LLVM iota_range Begin <= End assertion while lazily compiling aiter fp8_mqa_logits",
+      "resolution": "use chunked_prefill_size=8192 for the same-stack control",
+      "validated_by": "all 15 performance points, latency, GSM8K and AIME25"
+    }
+  ],
+  "artifacts": {
+    "performance_json_sha256": "ee4a460cd474d8b286a63dd37f7ffdc8c0e224063c836b3a407685fe9452ee3b",
+    "accuracy_json_sha256": "09716d1fc861eaf5671c87a1bfe10794f319f455c1d3695b3e226eda2acb3614",
+    "glm53_aime_prediction_set_sha256": "5d1f3e099e7cb24103caefb6ca1fd54ae1185b42786c75b7ec42d5233c5072c2",
+    "glm52_aime_prediction_set_sha256": "e777942ecef85f2514a511bcfe5af72475b618bfab58c286521d310ecce31d2c"
+  }
+}

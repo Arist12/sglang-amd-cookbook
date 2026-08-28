@@ -39,6 +39,231 @@ window.HW = {
 
 window.MODELS = [
   {
+    "id": "glm-5.3-flash",
+    "name": "GLM-5.3-Flash",
+    "family": "GLM",
+    "hf_path": "zai-org/GLM-5.3-Flash",
+    "architecture": "45-layer multimodal MoE: 34 KDA linear-attention layers + 11 NoPE sparse-MLA/DSA layers, mHC, 288 routed experts (top-8) + 1 shared expert, index_kpool=4, 1M context",
+    "precision": "block FP8 weights + bf16 non-Linears; fp8_e4m3 KV cache (effective 1.25 bytes/parameter over the active decode set)",
+    "status": "verified",
+    "params_active": "18B",
+    "params_total": "320B",
+    "active_params_billions": 18,
+    "bytes_per_param": 1.25,
+    "weights_gb": 306,
+    "context_len": "1048576",
+    "summary": [
+      {
+        "text": "Single-node TP=8/EP=1 deployment of zai-org/GLM-5.3-Flash on 8x MI355X, measured with FP8 KV, TileLang DSA, Triton KDA, AITER MoE/mHC, shared-expert fusion and the HIP fused k-pool path."
+      },
+      {
+        "topic": "glm-5.2 comparison",
+        "text": "On the same node, engine and random 8192/1024 protocol, GLM-5.3-Flash delivers 1.79x / 1.83x / 1.96x / 2.19x the GLM-5.2 total throughput at concurrency 1/8/16/32. It falls to 0.71x at concurrency 64 because this recipe captures decode graphs only at batch sizes 1 and 32, so the wider batch runs eager."
+      },
+      {
+        "topic": "latency",
+        "text": "BS=1 decode is 145.9 tok/s at ISL 1024 and 144.0 tok/s at ISL 8192, 1.66x and 1.78x the same-build GLM-5.2 control. Prefill reaches 43,329 tok/s at ISL 8192, 2.24x GLM-5.2."
+      },
+      {
+        "topic": "accuracy",
+        "text": "GSM8K is 97.49% (1281/1314), exactly equal to the same-build GLM-5.2 control. AIME25 is 93.75% pass@1 against 90.83% for GLM-5.2 under the same 30x16 protocol (+2.92 pp, about 3.0 combined SEM); 19/480 GLM-5.3 outputs hit the shared 64K cap, so its score is a lower bound."
+      },
+      {
+        "topic": "active bytes",
+        "text": "The roofline uses 1.25 bytes per active parameter rather than the FP8 label. Safetensors headers show 22.42 GB streamed per text decode step after excluding the one-row embedding lookup, but including bf16 attention, mHC and lm_head; divided by the official 18B active parameters that is 1.25 bytes/parameter."
+      },
+      {
+        "topic": "dependencies",
+        "text": "Measured on the stacked model-support PR #36507 and AMD enablement PR #36607 at 9d20876939, plus the gfx950 BF16 GEMM table from ROCm/aiter#5060. One local fix, hybrid_fp8_metadata.patch, is required for variable-prefix batches with FP8 KV. PR #36607 merged into the still-open #36507 branch during the run; the measurements remain pinned to their frozen head."
+      },
+      {
+        "topic": "determinism",
+        "text": "The earlier catastrophic nondeterminism is fixed: GSM8K is healthy and repeat prompts stay semantically correct. AITER fused MoE still contributes last-bit reduction noise: 24 greedy repeats produced six exact strings, while changing only the MoE runner to Triton produced three of three exact strings across all repeats. Treat the AITER path as numerically non-bitwise-deterministic."
+      }
+    ],
+    "configs": [
+      {
+        "hw_name": "MI355X",
+        "gfx": "gfx950",
+        "gpus": 8,
+        "quant": "block FP8 weights, fp8_e4m3 KV cache",
+        "strategy": "high-throughput",
+        "nodes": "single",
+        "verified": true,
+        "docker_image": "rocm/sgl-dev:v0.5.18-rocm724-mi35x-20260826",
+        "launch_python": "export SGLANG_USE_AITER=1\nexport PYTORCH_HIP_ALLOC_CONF=expandable_segments:True\npython3 -m sglang.launch_server \\\n  --model-path zai-org/GLM-5.3-Flash \\\n  --revision 04c4e9e95c5da8862dced7e5056455116f83a7e0 \\\n  --served-model-name glm-5.3-flash \\\n  --tp-size 8 --ep-size 1 \\\n  --trust-remote-code \\\n  --attention-backend dsa \\\n  --dsa-prefill-backend tilelang \\\n  --dsa-decode-backend tilelang \\\n  --linear-attn-backend triton \\\n  --kv-cache-dtype fp8_e4m3 \\\n  --quantization fp8 \\\n  --moe-runner-backend aiter \\\n  --cuda-graph-backend-decode full \\\n  --cuda-graph-backend-prefill disabled \\\n  --cuda-graph-bs-decode 1 32 \\\n  --disable-radix-cache \\\n  --chunked-prefill-size 8192 \\\n  --max-running-requests 64 \\\n  --reasoning-parser glm45 \\\n  --tool-call-parser glm47 \\\n  --watchdog-timeout 1200 \\\n  --host 0.0.0.0 --port 30000",
+        "parallelism": {
+          "tp": 8,
+          "ep": 1,
+          "dp": null
+        },
+        "attention_backend": "TileLang DSA prefill/decode + Triton KDA",
+        "moe_backend": "AITER TP-sharded MoE, shared-expert fusion enabled",
+        "aiter": {
+          "enabled": true,
+          "commit": "c16d44b93a + ROCm/aiter#5060 95565e33c8",
+          "kernels": [
+            "FP8 routed MoE",
+            "gfx950 mHC pre/post",
+            "fused attention-to-FFN mHC boundary"
+          ],
+          "tuned_artifacts": [
+            "glm53_bf16_tuned_gemm.csv"
+          ],
+          "summary": "The image's compiled AITER stays at c16d44b93a; only the ten-row GLM-5.3 gfx950 BF16 GEMM table from PR #5060 is overlaid, avoiding a source/binary mismatch."
+        },
+        "env": [
+          {
+            "key": "SGLANG_USE_AITER",
+            "value": "1",
+            "why": "Select AITER MoE and the gfx950 mHC pre/post plus fused-boundary paths added by SGLang #36607."
+          },
+          {
+            "key": "PYTORCH_HIP_ALLOC_CONF",
+            "value": "expandable_segments:True",
+            "why": "Keep the launch identical to the measured ROCm container; this torch build warns that the option is unsupported, so it is not credited with a performance effect."
+          }
+        ],
+        "accuracy": [
+          {
+            "name": "GSM8K",
+            "value": "97.49%",
+            "note": "1281/1314, in-tree run_eval, chat+thinking, temperature 0, max-tokens 8192, 32 threads. The requested 1319 examples resolve to 1314 in this evaluator revision. Completed in 219.0 s.",
+            "ref": "GLM-5.2 same-stack control: 97.49% (1281/1314)"
+          },
+          {
+            "name": "AIME25",
+            "value": "93.75%",
+            "note": "pass@1 avg-of-16 via sgl-eval, n=30x16=480, SEM 0.42 pp, pass@16 100%, majority@16 100%, error 0%. Stop rate 96.04%; 19/480 reached max-tokens 64000, so the score is a lower bound under this shared cap.",
+            "ref": "GLM-5.2 same-stack control: 90.83% (SEM 0.89 pp, majority@16 95%, truncated 1/480)"
+          }
+        ],
+        "benchmarks": [
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 1,
+            "ttft_ms": 199.49,
+            "tpot_ms": 6.95,
+            "decode_tok_s": 143.9,
+            "output_tok_s": 139.93,
+            "total_tok_s": 1259.36,
+            "tok_s_per_gpu": 157.4,
+            "source": "glm53_flash_playbook.md section 5 (median of 3 runs; run 20260827T233110Z; 8x MI355X; SGLang #36607 9d20876939 + local hybrid-FP8 metadata fix; AITER #5060 95565e33c8)"
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 8,
+            "ttft_ms": 955.25,
+            "tpot_ms": 9.81,
+            "output_tok_s": 744.6,
+            "total_tok_s": 6701.38,
+            "tok_s_per_gpu": 837.7,
+            "source": "glm53_flash_playbook.md section 5 (median of 3 runs; run 20260827T233110Z; 8x MI355X; SGLang #36607 9d20876939 + local hybrid-FP8 metadata fix; AITER #5060 95565e33c8)"
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 16,
+            "ttft_ms": 1624.32,
+            "tpot_ms": 10.8,
+            "output_tok_s": 1292.46,
+            "total_tok_s": 11632.14,
+            "tok_s_per_gpu": 1454.0,
+            "source": "glm53_flash_playbook.md section 5 (median of 3 runs; run 20260827T233110Z; 8x MI355X; SGLang #36607 9d20876939 + local hybrid-FP8 metadata fix; AITER #5060 95565e33c8)"
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 32,
+            "ttft_ms": 2945.24,
+            "tpot_ms": 12.7,
+            "output_tok_s": 2054.79,
+            "total_tok_s": 18493.13,
+            "tok_s_per_gpu": 2311.6,
+            "source": "glm53_flash_playbook.md section 5 (median of 3 runs; run 20260827T233110Z; 8x MI355X; SGLang #36607 9d20876939 + local hybrid-FP8 metadata fix; AITER #5060 95565e33c8)"
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 64,
+            "ttft_ms": 5555.98,
+            "tpot_ms": 69.45,
+            "output_tok_s": 828.73,
+            "total_tok_s": 7458.58,
+            "tok_s_per_gpu": 932.3,
+            "source": "glm53_flash_playbook.md section 5 (median of 3 runs; run 20260827T233110Z; 8x MI355X; SGLang #36607 9d20876939 + local hybrid-FP8 metadata fix; AITER #5060 95565e33c8)"
+          },
+          {
+            "isl": 1024,
+            "osl": 1024,
+            "concurrency": 1,
+            "prefill_tok_s": 9986.94,
+            "decode_tok_s": 145.88,
+            "source": "glm53_flash_playbook.md section 6 (median of 3 runs; run 20260827T233110Z; 8x MI355X; SGLang #36607 9d20876939 + local hybrid-FP8 metadata fix; AITER #5060 95565e33c8)"
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 1,
+            "prefill_tok_s": 43329.0,
+            "decode_tok_s": 144.03,
+            "source": "glm53_flash_playbook.md section 6 (median of 3 runs; run 20260827T233110Z; 8x MI355X; SGLang #36607 9d20876939 + local hybrid-FP8 metadata fix; AITER #5060 95565e33c8)"
+          },
+          {
+            "isl": 16384,
+            "osl": 1024,
+            "concurrency": 1,
+            "prefill_tok_s": 46039.27,
+            "decode_tok_s": 143.64,
+            "source": "glm53_flash_playbook.md section 6 (median of 3 runs; run 20260827T233110Z; 8x MI355X; SGLang #36607 9d20876939 + local hybrid-FP8 metadata fix; AITER #5060 95565e33c8)"
+          }
+        ],
+        "vs_nvidia": [],
+        "gotchas": [
+          "Run setup_pr.sh before launch. SGLang #36607 is stacked on model-support PR #36507, AITER #5060 supplies the model-specific BF16 GEMM table, and hybrid_fp8_metadata.patch fixes an uncovered variable-prefix FP8-KV crash. Without the local patch, a concurrent GSM8K run aborts in _get_mla_kv_buffer_from_fp8_for_dsa because get_attn_backend() returns HybridLinearAttnBackend rather than its DSA child.",
+          "Decode graphs are captured only for batch sizes 1 and 32, exactly as in the upstream AMD recipe. Concurrency 64 therefore runs eager and total throughput falls 60% from 18,493 to 7,459 tok/s. Do not infer a hardware saturation point from that row; capture 64 and re-run before serving that width.",
+          "AITER fused MoE is not bitwise deterministic for this model. With identical serial greedy requests and a cache flush between calls, 24 repeats produced six exact continuations; Triton MoE produced one continuation per prompt across all 24. All variants remained semantically correct and the AITER recipe scored 97.49% on full GSM8K, but exact replay is not a supported property.",
+          "AIME25 at max-tokens 64000 truncated 19/480 samples. The 93.75% score is directly comparable to GLM-5.2 under the same cap, but it is not a cap-free model-quality estimate.",
+          "The checkpoint's FP8 label is not its active-byte ratio: bf16 attention, mHC and lm_head raise the decode stream to 22.42 GB, or 1.25 bytes per official active parameter. Using 1.0 would overstate the memory-bound roofline by 25%.",
+          "At the measurement freeze, model support #36507, AMD enablement #36607 and AITER #5060 were open PRs rather than a released SGLang build. #36607 later merged into the #36507 feature branch, not main. Pin every measured SHA; a moving PR head is not reproducible."
+        ],
+        "provenance": {
+          "image": "rocm/sgl-dev:v0.5.18-rocm724-mi35x-20260826",
+          "pr": "https://github.com/sgl-project/sglang/pull/36507; AMD stack #36607; ROCm/aiter#5060; local hybrid_fp8_metadata.patch",
+          "sglang": "0.5.18.dev20260826+g937af8538b; SGLang #36607 head 9d208769398882e20220cb97722bf610397e66d8 plus one local metadata-unwrapping fix",
+          "aiter": "c16d44b93a528b2a4bfd6d8d3409116d465872a9 plus glm53_bf16_tuned_gemm.csv from ROCm/aiter#5060 head 95565e33c8287a8c56bc31a84edf2de3ecc97662",
+          "rocm": "7.2.4; torch 2.11.0+rocm7.2; HIP 7.2.26015",
+          "date": "2026-08-27T23:31:10Z through 2026-08-28 UTC; performance 00:08-00:57Z, accuracy 00:57-01:44Z",
+          "node": "mia1-p02-g46, 8x AMD Instinct MI355X (gfx950), 288 GiB each"
+        }
+      }
+    ],
+    "gaps": [
+      {
+        "title": "Decode graph at batch size 64",
+        "kind": "throughput",
+        "note": "The measured recipe captures only 1 and 32. The concurrency-64 eager fallback is slower than concurrency 32; add 64 to --cuda-graph-bs-decode and re-run the same point before using that lane."
+      },
+      {
+        "title": "NEXTN speculative decoding on ROCm",
+        "kind": "strategy",
+        "note": "The checkpoint contains a draft layer, but k-pool target verification and the final accuracy/performance path were not validated on ROCm in this run."
+      },
+      {
+        "title": "Long-context speed and accuracy",
+        "kind": "latency",
+        "note": "The model advertises 1M context; this run measures latency only through ISL 16384 and does not validate long-context quality or FP8-KV drift."
+      },
+      {
+        "title": "Multimodal quality",
+        "kind": "accuracy",
+        "note": "The 24-layer vision encoder loads and the model is natively multimodal, but no image or video benchmark was run on MI355X."
+      }
+    ]
+  },
+  {
     "id": "glm-5.2-fp8",
     "name": "GLM-5.2-FP8",
     "family": "GLM",
