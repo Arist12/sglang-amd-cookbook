@@ -1,31 +1,52 @@
 #!/usr/bin/env bash
-# Overlay SGLang PR #36507 (GLM-5.3-Flash support) onto the ROCm nightly image's
-# editable sglang checkout at /sgl-workspace/sglang.
+# Overlay the frozen GLM-5.3 model + ROCm stack onto the nightly image's editable
+# checkouts. PR #36607 is stacked on #36507, so its head contains both.
 #
-# The nightly image installs sglang with `pip install -e python[...]`, and the PR
-# touches neither python/sglang/kernels/aot/** nor pyproject.toml, so a plain
-# checkout takes effect without rebuilding the AOT kernels or reinstalling.
+# AITER #5060 adds only a tuning CSV. Keep the image's compiled AITER commit and
+# overlay that exact file; checking out the whole newer AITER tree would mix it
+# with extensions compiled from the image's older source.
 set -euo pipefail
 
 NAME="${NAME:-glm53-flash}"
-PR="${PR:-36507}"
-EXPECT_HEAD="${EXPECT_HEAD:-fa8735a4ff2b2c047b464d2fb3286dfa0aab021f}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+RESULTS="${RESULTS:-$HOME/glm53-flash-results}"
+SGLANG_PR="${SGLANG_PR:-36607}"
+SGLANG_HEAD="${SGLANG_HEAD:-9d208769398882e20220cb97722bf610397e66d8}"
+AITER_PR="${AITER_PR:-5060}"
+AITER_HEAD="${AITER_HEAD:-95565e33c8287a8c56bc31a84edf2de3ecc97662}"
+PATCH="${PATCH:-/results/hybrid_fp8_metadata.patch}"
+TUNING_PATH="aiter/configs/model_configs/glm53_bf16_tuned_gemm.csv"
+TUNING_SHA256="bc4c88d602e773f0bbb13cdaaf8650dfbaa7a506bbc987c77fe57e13aa0df90c"
+
+mkdir -p "$RESULTS"
+install -m 0644 "$SCRIPT_DIR/hybrid_fp8_metadata.patch" \
+  "$RESULTS/hybrid_fp8_metadata.patch"
 
 docker exec "$NAME" bash -lc "
 set -euo pipefail
 cd /sgl-workspace/sglang
 echo '--- before ---'
 git log -1 --format='%H %ci %s'
-git fetch --no-tags origin 'pull/${PR}/head:pr${PR}'
-git checkout -q 'pr${PR}'
+git fetch --no-tags origin 'pull/${SGLANG_PR}/head'
+git merge-base --is-ancestor '${SGLANG_HEAD}' FETCH_HEAD
+git checkout -q --detach '${SGLANG_HEAD}'
 echo '--- after ---'
 git log -1 --format='%H %ci %s'
-HEAD_SHA=\$(git rev-parse HEAD)
-if [ \"\$HEAD_SHA\" != '${EXPECT_HEAD}' ]; then
-  echo \"WARNING: PR head is \$HEAD_SHA, expected ${EXPECT_HEAD} (PR was updated)\"
+
+if git apply --reverse --check '${PATCH}' >/dev/null 2>&1; then
+  echo 'hybrid FP8 metadata patch already applied'
+else
+  git apply --check '${PATCH}'
+  git apply '${PATCH}'
 fi
-echo '--- merge-base drift vs image build point ---'
-git log -1 --format='%H %ci %s' \$(git merge-base HEAD origin/main) || true
+
+git -C /sgl-workspace/aiter fetch --no-tags origin 'pull/${AITER_PR}/head'
+test \"\$(git -C /sgl-workspace/aiter rev-parse FETCH_HEAD)\" = '${AITER_HEAD}'
+git -C /sgl-workspace/aiter show \
+  '${AITER_HEAD}:${TUNING_PATH}' \
+  > '/sgl-workspace/aiter/${TUNING_PATH}'
+echo '${TUNING_SHA256}  /sgl-workspace/aiter/${TUNING_PATH}' | sha256sum -c -
+
 echo '--- model registered? ---'
 python3 -c \"
 from sglang.srt.configs.glm5_next import Glm5NextConfig
@@ -33,12 +54,5 @@ print('Glm5NextConfig.model_type =', Glm5NextConfig.model_type)
 import sglang.srt.models.glm5_next as m
 print('glm5_next module ok:', m.__file__)
 print('arch classes:', [n for n in dir(m) if n.startswith('Glm5Next') and n.endswith(('CausalLM','Generation'))])
-\"
-echo '--- kpool tail backend whitelist (the hard ROCm constraint) ---'
-python3 -c \"
-import inspect
-from sglang.srt.layers.attention.dsa_backend import DSAAttnBackend as B
-src = inspect.getsource(B._check_kpool_tail_backend)
-print(src)
 \"
 "

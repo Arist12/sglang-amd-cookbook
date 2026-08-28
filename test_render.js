@@ -67,14 +67,16 @@ console.log("\n=== base render ===");
   check("compare row per verified cell", qa("#compare-body tbody tr").length === verified,
     qa("#compare-body tbody tr").length + " rows / " + verified + " verified cells");
   check("compare surfaces accuracy", /97\.64%/.test(d.querySelector("#compare-body").textContent));
+  check("compare surfaces GLM-5.3 AIME25", /93\.75%/.test(d.querySelector("#compare-body").textContent));
   check("method section has 4 columns", qa("#method .refcol").length === 4);
-  check("masthead rev is current", /2026\.07/.test(d.querySelector(".partline").textContent));
+  check("masthead rev is current", /2026\.08/.test(d.querySelector(".partline").textContent));
 }
 
 // ---------------------------------------------------------------- 2. deep links
 console.log("\n=== deep links ===");
 for (const [hash, wantModel, wantStrat] of [
   ["#m=glm-5.2-fp8", "glm-5.2-fp8", "low-latency"],                       // legacy form
+  ["#m=glm-5.3-flash&c=gfx950:high-throughput", "glm-5.3-flash", "high-throughput"],
   ["#m=kimi-k3", "kimi-k3", "low-latency"],                               // model only
   ["#m=kimi-k3&c=gfx950:high-throughput", "kimi-k3", "high-throughput"],  // cell
   ["#m=nope", null, null],                                                // garbage

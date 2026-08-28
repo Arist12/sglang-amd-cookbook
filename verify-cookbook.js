@@ -136,6 +136,53 @@ if (!k3) {
   pass(`kimi-k3: ${k3.configs.length} cells, benchmark rows ${n}`);
 }
 
+const glm53 = MODELS.find((m) => m.id === "glm-5.3-flash");
+if (!glm53) {
+  fail("glm-5.3-flash entry missing");
+} else {
+  const cell = (glm53.configs || []).find(
+    (c) => c.gfx === "gfx950" && c.strategy === "high-throughput");
+  if (!cell || !cell.verified) {
+    fail("glm-5.3-flash verified gfx950 high-throughput cell missing");
+  } else {
+    const cmd = cell.launch_python || "";
+    for (const required of [
+      "--revision 04c4e9e95c5da8862dced7e5056455116f83a7e0",
+      "--kv-cache-dtype fp8_e4m3",
+      "--moe-runner-backend aiter",
+      "--cuda-graph-backend-decode full",
+      "--cuda-graph-backend-prefill disabled",
+      "--cuda-graph-bs-decode 1 32",
+      "--disable-radix-cache",
+    ]) {
+      if (!cmd.includes(required)) fail(`glm-5.3-flash command missing ${required}`);
+    }
+    const perf = (cell.benchmarks || []).filter(
+      (b) => b.isl === 8192 && b.osl === 1024 && b.total_tok_s != null);
+    const byConcurrency = Object.fromEntries(perf.map((b) => [b.concurrency, b]));
+    for (const concurrency of [1, 8, 16, 32, 64]) {
+      if (!byConcurrency[concurrency]) {
+        fail(`glm-5.3-flash missing concurrency ${concurrency} result`);
+      }
+    }
+    if (byConcurrency[32] && byConcurrency[64] &&
+        byConcurrency[64].total_tok_s >= byConcurrency[32].total_tok_s) {
+      fail("glm-5.3-flash c64 eager-fallback result no longer matches its documented cliff");
+    }
+    for (const name of ["GSM8K", "AIME25"]) {
+      if (!(cell.accuracy || []).some((a) => a.name === name)) {
+        fail(`glm-5.3-flash missing ${name}`);
+      }
+    }
+    if (!cell.provenance || !/9d208769/.test(cell.provenance.sglang || "") ||
+        !/2026-08-27T23:31:10Z/.test(cell.provenance.date || "")) {
+      fail("glm-5.3-flash frozen SHA/timestamp provenance missing");
+    } else {
+      pass(`glm-5.3-flash: verified cell, ${cell.benchmarks.length} benchmark rows`);
+    }
+  }
+}
+
 console.log();
 if (failures) {
   console.error(`${failures} check(s) failed`);

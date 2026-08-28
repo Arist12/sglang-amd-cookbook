@@ -1,72 +1,81 @@
 #!/usr/bin/env bash
-# Benchmark a running SGLang server inside the dev container.
+# Reproduce the measured GLM-5.3-Flash MI355X cell against a running container.
 #
-#   bash bench.sh main   <tag>   ISL 8192 / OSL 1024, conc 1/16/64  (GLM-5.2 baseline protocol)
-#   bash bench.sh cook   <tag>   ISL 1024 / OSL  256, conc 16/64/256 (cookbook GB300 protocol)
-#   bash bench.sh long   <tag>   conc 1, OSL 512, ISL 8192->131072
-#   bash bench.sh lat    <tag>   bench_one_batch_server, bs=1, ISL 1024/8192/16384
-set -uo pipefail
+#   bash bench.sh sanity <tag>  upstream 1K/1K anchors, concurrency 1 and 32
+#   bash bench.sh main   <tag>  GLM-5.2 comparison shape, three repeats per point
+#   bash bench.sh lat    <tag>  BS=1 latency, three repeats per input length
+set -euo pipefail
 
 if [ $# -lt 2 ]; then
-  echo "usage: bench.sh <main|cook|long|lat> <tag>" >&2
+  echo "usage: bench.sh <sanity|main|lat> <tag>" >&2
   exit 2
 fi
+
 MODE="$1"
 TAG="$2"
 NAME="${NAME:-glm53-flash}"
 PORT="${PORT:-30000}"
-MODEL="${MODEL:-zai-org/GLM-5.3-Flash}"
-OUT="/results/bench/${TAG}"
+TOKENIZER="${TOKENIZER:-/hf-cache/hub/models--zai-org--GLM-5.3-Flash/snapshots/04c4e9e95c5da8862dced7e5056455116f83a7e0}"
+SERVED="${SERVED:-glm-5.3-flash}"
+HOST_OUT="${HOST_OUT:-$HOME/glm53-flash-results/bench/${TAG}}"
+CONTAINER_OUT="/results/bench/${TAG}"
 
-mkdir -p "$HOME/glm53-flash-results/bench/${TAG}"
+mkdir -p "$HOST_OUT"
 
-run() { docker exec "$NAME" bash -lc "cd /sgl-workspace/sglang && $1"; }
+run() {
+  docker exec "$NAME" bash -lc "cd /sgl-workspace/sglang/python && $1"
+}
+
+serving_point() {
+  local concurrency="$1"
+  local prompts="$2"
+  local isl="$3"
+  local repeat="$4"
+  local prefix="$5"
+  local stem="${prefix}-c${concurrency}-r${repeat}"
+
+  date -u +'%Y-%m-%dT%H:%M:%SZ' > "${HOST_OUT}/${stem}.started"
+  run "python3 -m sglang.benchmark.serving \
+    --backend sglang --dataset-name random \
+    --random-input-len ${isl} --random-output-len 1024 --random-range-ratio 1.0 \
+    --num-prompts ${prompts} --max-concurrency ${concurrency} \
+    --request-rate inf --temperature 0 --seed 42 \
+    --flush-cache --warmup-requests ${concurrency} \
+    --host 127.0.0.1 --port ${PORT} \
+    --model '${SERVED}' --served-model-name '${SERVED}' --tokenizer '${TOKENIZER}' \
+    --output-details --output-file '${CONTAINER_OUT}/${stem}.jsonl'" 2>&1 \
+    | tee "${HOST_OUT}/${stem}.txt"
+  date -u +'%Y-%m-%dT%H:%M:%SZ' > "${HOST_OUT}/${stem}.finished"
+}
 
 case "$MODE" in
+  sanity)
+    serving_point 1 10 1024 1 sanity
+    serving_point 32 320 1024 1 sanity
+    ;;
   main)
-    for C in 1 16 64; do
-      echo "======== main: conc=${C} ISL 8192 / OSL 1024 ========"
-      run "python3 -m sglang.bench_serving --backend sglang --dataset-name random \
-        --random-input-len 8192 --random-output-len 1024 --random-range-ratio 1.0 \
-        --num-prompts \$(( ${C} * 2 )) --max-concurrency ${C} \
-        --host 127.0.0.1 --port ${PORT} \
-        --output-file ${OUT}/main-conc${C}.jsonl" 2>&1 \
-        | tee "$HOME/glm53-flash-results/bench/${TAG}/main-conc${C}.txt"
-    done
-    ;;
-  cook)
-    # cookbook protocol: fixed num-prompts per concurrency, flush cache, greedy, seeded
-    declare -A NP=( [16]=80 [64]=320 [256]=1280 )
-    for C in 16 64 256; do
-      echo "======== cook: conc=${C} ISL 1024 / OSL 256 n=${NP[$C]} ========"
-      run "python3 -m sglang.bench_serving --backend sglang --dataset-name random \
-        --random-input-len 1024 --random-output-len 256 --random-range-ratio 1.0 \
-        --num-prompts ${NP[$C]} --max-concurrency ${C} \
-        --request-rate inf --temperature 0 --seed 42 --flush-cache \
-        --host 127.0.0.1 --port ${PORT} \
-        --output-file ${OUT}/cook-conc${C}.jsonl" 2>&1 \
-        | tee "$HOME/glm53-flash-results/bench/${TAG}/cook-conc${C}.txt"
-    done
-    ;;
-  long)
-    for ISL in 8192 32768 131072; do
-      echo "======== long: ISL=${ISL} OSL 512 conc 1 ========"
-      run "python3 -m sglang.bench_serving --backend sglang --dataset-name random \
-        --random-input-len ${ISL} --random-output-len 512 --random-range-ratio 1.0 \
-        --num-prompts 2 --max-concurrency 1 \
-        --host 127.0.0.1 --port ${PORT} \
-        --output-file ${OUT}/long-isl${ISL}.jsonl" 2>&1 \
-        | tee "$HOME/glm53-flash-results/bench/${TAG}/long-isl${ISL}.txt"
+    for concurrency in 1 8 16 32 64; do
+      for repeat in 1 2 3; do
+        serving_point \
+          "$concurrency" "$((concurrency * 4))" 8192 "$repeat" perf
+      done
     done
     ;;
   lat)
-    echo "======== latency: bs=1 ISL 1024/8192/16384 OSL 1024 ========"
-    run "python3 -m sglang.bench_one_batch_server \
-      --model-path '${MODEL}' --base-url http://127.0.0.1:${PORT} \
-      --batch-size 1 --input-len 1024 8192 16384 --output-len 1024 \
-      --dataset-name random --skip-warmup \
-      --result-filename ${OUT}/latency.jsonl" 2>&1 \
-      | tee "$HOME/glm53-flash-results/bench/${TAG}/latency.txt"
+    for repeat in 1 2 3; do
+      stem="latency-r${repeat}"
+      date -u +'%Y-%m-%dT%H:%M:%SZ' > "${HOST_OUT}/${stem}.started"
+      run "python3 -m sglang.benchmark.one_batch_server \
+        --model-path '${TOKENIZER}' --base-url http://127.0.0.1:${PORT} \
+        --batch-size 1 --input-len 1024 8192 16384 --output-len 1024 \
+        --dataset-name random --skip-warmup \
+        --result-filename '${CONTAINER_OUT}/${stem}.jsonl'" 2>&1 \
+        | tee "${HOST_OUT}/${stem}.txt"
+      date -u +'%Y-%m-%dT%H:%M:%SZ' > "${HOST_OUT}/${stem}.finished"
+    done
     ;;
-  *) echo "unknown mode: $MODE"; exit 2 ;;
+  *)
+    echo "unknown mode: $MODE" >&2
+    exit 2
+    ;;
 esac
