@@ -291,3 +291,97 @@ the published numbers can be tied back to the raw run.
 - Decode graph batch size 64: the current row measures the eager fallback.
 - Long-context speed and accuracy past ISL 16,384.
 - Image and video quality through the 24-layer vision encoder.
+
+## 11. Pitfalls
+
+Everything here cost real debugging time on this cell. None of it is visible
+in the launch command.
+
+### 11.1 One broken `rocminfo` silently mis-targets your kernels
+
+Re-launching the frozen recipe on the same node a day later failed in three
+different places. All three trace back to `rocminfo` aborting inside
+`libhsa-runtime64`:
+
+```text
+rocminfo: ./src/core/runtime/amd_memory_region.cpp:173:
+Assertion `GetPhysicalSize() <= GetVirtualSize()' failed.
+```
+
+It aborts with `ROCR_VISIBLE_DEVICES` empty as well, so the failing agent is a
+CPU system-memory agent, not a GPU. `amd-smi` was clean, torch saw 8 gfx950
+devices, and matmuls returned correct results the whole time. **A healthy
+`amd-smi` does not mean a healthy `rocminfo`, and four independent consumers
+parse the latter's text output:**
+
+| Consumer | What it greps | Failure mode |
+|---|---|---|
+| `aiter/jit/utils/chip_info.py` | first `gfx\w+`, and `Compute Unit:` | raises -- loud |
+| `sglang/srt/utils/common.py` | `Pool 1` ... `Size:` in KB | raises -- loud |
+| `tilelang/contrib/rocm.py` | `Name:\s+gfx\d+` | **silently returns `gfx900`** |
+| `rocm_agent_enumerator -name` | `Name: amdgcn-amd-amdhsa--gfx<n>` | **silently yields nothing** |
+
+The two silent ones are the expensive ones.
+
+`tilelang` falling back to `gfx900` makes HIP compile decode kernels for the
+wrong target, and CUDA-graph capture dies with a `hipcc ... --offload-arch=gfx900`
+compilation error that names a memory limit as the likely cause. It is not a
+memory problem; do not lower `--mem-fraction-static` chasing it.
+
+The fourth is worse, because the server comes up clean. `flydsl.runtime.device`
+reads `rocm_agent_enumerator -name`, gets nothing, and falls back to `gfx942`.
+In `aiter/ops/flydsl/kernels/splitk_hgemm.py` that flips `DMA_BYTES` from 16 to
+4, which quadruples `LDG_WAIT_COUNT` and trips
+
+```text
+assert ((STAGES - 2) * LDG_WAIT_COUNT) < 63
+```
+
+while JIT-compiling a BF16 GEMM. The scheduler takes a `SIGQUIT` on the **first
+real request** -- after `/health` has already returned 200 and after every
+optimization banner has printed. On this model the shape is `n=4096, k=512`,
+the `kv_lora_rank=512` projection in the 11 DSA layers, and the tuned table
+routes `M >= 48` there through flydsl. So it survives a batch-1 smoke test and
+kills the server under load.
+
+Check all four detectors agree before trusting a run:
+
+```bash
+rocminfo | grep -m1 gfx                     # aiter, sglang, tilelang
+rocm_agent_enumerator -name | head -1       # flydsl -- must NOT be empty
+python3 -c "from flydsl.runtime.device import get_rocm_arch; print(get_rocm_arch())"
+python3 -c "import torch; print(torch.cuda.get_device_properties(0).gcnArchName)"
+```
+
+If they disagree, [`glm53_flash/rocminfo_shim.sh`](glm53_flash/rocminfo_shim.sh)
+is a drop-in replacement that reports the same facts from `torch` and
+`amd-smi`. It is a node workaround, not part of the recipe: the
+20260827T233110Z measurements ran with a working `rocminfo`, and the shim was
+only needed to reproduce them afterwards. Confirm the GPUs are actually healthy
+before installing it.
+
+### 11.2 `resolve_attn_backend()` now unwraps for every caller
+
+`hybrid_fp8_metadata.patch` puts the `full_attn_backend` unwrap inside the
+shared `resolve_attn_backend()` in `forward_mha.py`, not at the one call site
+that crashed. That is deliberate -- every model-side MLA hook in that file
+wants the DSA child, and a non-hybrid model has no `full_attn_backend`
+attribute so the `getattr` fallback returns the backend unchanged. Worth
+knowing before adding a caller that genuinely needs the *parent* backend: it
+will silently get the child instead.
+
+### 11.3 A tie on GSM8K is not a null result
+
+GLM-5.3 and the GLM-5.2 control both score exactly 1281/1314. The gate is
+saturated at this level and does not separate the two models; AIME25 does
+(93.75% vs 90.83%, 2.98 combined standard errors). Do not read the GSM8K tie
+as evidence the models are equivalent, and do not tune against it.
+
+### 11.4 The evidence trail has one gap by construction
+
+`gen_glm53_mi355x_rows.py` re-validates the frozen server config out of each
+serving record's `server_info`. `bench_one_batch_server` does not emit
+`server_info` at all, so the nine latency records are validated on shape only
+(batch size, output length, the three-repeat set) and rely on directory
+provenance for which server produced them. Keep latency runs inside the same
+tagged results directory as the serving runs, or that link is lost.

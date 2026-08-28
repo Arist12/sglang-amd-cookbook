@@ -7,8 +7,20 @@ The final study writes one file per repeat:
     latency-r{repeat}.jsonl
 
 Every published point is the median of three complete runs.  This script fails
-closed on missing repeats, request/token-accounting errors, mixed server
-revisions, or more than 5% total-throughput spread.
+closed on missing repeats, request/token-accounting errors, or more than 5%
+total-throughput spread.
+
+Server-config validation is not uniform, and the asymmetry is deliberate:
+``sglang.benchmark.serving`` records carry ``server_info``, so the 15 serving
+points are checked against the frozen revision, SGLang version and backend
+flags.  ``bench_one_batch_server`` emits no ``server_info``, so the nine
+latency records are checked on shape only -- batch size, output length and the
+three-repeat set -- and rely on living in the same tagged results directory for
+provenance.  Do not read "validated" as meaning the same thing for both.
+
+Pass ``--check-models models.js`` to additionally fail unless the published
+rows are byte-identical to the ones regenerated here.  ``verify.sh`` runs that
+form; a bare invocation only prints.
 """
 
 from __future__ import annotations
@@ -102,6 +114,8 @@ def load_perf(root: Path) -> dict[int, list[dict]]:
 
 
 def load_latency(root: Path) -> dict[int, list[dict]]:
+    # No validate_server() here: bench_one_batch_server writes no server_info.
+    # These rows are shape-validated only -- see the module docstring.
     grouped: dict[int, list[dict]] = defaultdict(list)
     seen = set()
     for path in sorted(root.glob("latency-r*.jsonl")):
