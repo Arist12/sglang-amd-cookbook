@@ -16,7 +16,7 @@ GLM-5.3 is a post-training release on GLM-5.2's base, and on this hardware it is
 
 There is **no `zai-org/GLM-5.3-FP8`** — the published repository is already fp8, and asking for the `-FP8` name answers **401**, which reads as a permissions problem and is not one.
 
-So the [`glm52_fp8_mi355x_playbook.md`](glm52_fp8_mi355x_playbook.md) recipes transfer, and the interesting content of this playbook is the one thing that does not: **a long cold prefill aborts the server on the `high-throughput` recipe.**
+So the [`glm52_fp8_mi355x_playbook.md`](glm52_fp8_mi355x_playbook.md) recipes transfer — and so does the failure this playbook exists for. **A long cold prefill aborts every rank of any `glm_moe_dsa` pool on gfx950, including on SGLang's default flags, and GLM-5.2-FP8 is on the same wall.** §1 has the cause, the arithmetic that says where the wall is for a given `--chunked-prefill-size`, and the one-line upstream fix.
 
 ## 0. Environment (verified)
 
@@ -26,6 +26,7 @@ So the [`glm52_fp8_mi355x_playbook.md`](glm52_fp8_mi355x_playbook.md) recipes tr
 | Image | `rocm/sgl-dev:v0.5.18-rocm724-mi35x-20260827` — stock, pulled and run unmodified |
 | SGLang | `0.5.18.dev20260827+g20a491d1d3` — no fork, no patch |
 | ROCm | 7.2.4 (image); host 7.1.1 / amdgpu 6.16.6 |
+| §1 cross-checks | also `…-rocm724-…-20260828` and `…-rocm720-mi35x-20260827`. The last carries ROCm 7.2.0 and torch 2.9.1 against 7.2.4 and torch 2.11.0, and the same Triton 3.7.0 — §1's abort is identical on all three |
 | aiter | `SGLANG_USE_AITER=1` |
 | Weights | `zai-org/GLM-5.3` — 703.8 GiB, 141 shards, downloaded with `huggingface_hub` 1.28 at ~385 MB/s |
 | Cold start | **~6 min** to `/health` on the `high-throughput` recipe |
@@ -33,7 +34,7 @@ So the [`glm52_fp8_mi355x_playbook.md`](glm52_fp8_mi355x_playbook.md) recipes tr
 
 Six minutes to `/health` is worth noting against GLM-5.2's ~19 min on 0.5.17 in the playbook above. Same shard count, same bytes, same filesystem.
 
-## 1. The finding: a cold bulk prefill aborts the tuned recipe
+## 1. The finding: a cold bulk prefill aborts any DSA pool on this hardware
 
 Deployed on the `high-throughput` recipe — fp8 KV, `--chunked-prefill-size 32768`, `--mem-fraction-static 0.92` — this pool served **76 real agentic calls** and a full 1→16 concurrency sweep without a fault. Then a single chat completion with a long prompt that was **not already in the prefix cache** took every TP rank down:
 
@@ -55,9 +56,9 @@ The traffic that had been running on this pool is **prefix replay, not prompting
 
 If you serve agents, your monitoring will not find this. If you serve documents, it is your first request.
 
-### The three flags it is suspected of
+### It is not the flags, and it is not this recipe
 
-The serving command SGLang publishes for these weights differs from `high-throughput` in exactly three places, all on the prefill path:
+The serving command SGLang publishes for these weights differs from `high-throughput` in exactly three places, all on the prefill path, and the leading suspect was `--kv-cache-dtype`:
 
 | flag | published | `high-throughput` |
 |---|---|---|
@@ -65,14 +66,57 @@ The serving command SGLang publishes for these weights differs from `high-throug
 | `--mem-fraction-static` | 0.80 | 0.92 |
 | `--kv-cache-dtype` | *(absent — bf16)* | `fp8_e4m3` |
 
-The third is the leading suspect, and the GLM-5.2 playbook in this repository already contains the reason without knowing it: §1.3 records that `fp8_e4m3` KV is legal on the tilelang DSA path **on ROCm only**, and §2.2's gotcha records that the fp8 DSA indexer kernel is **loaded lazily on the first long-context prefill**. That is the code path the assertion fires on, and it is the one thing in the recipe that upstream does not have.
+**The isolating run answered no on all three.** The published command, same image, same weights, same node, aborts at the same length on the same assertion. So does the next image, `v0.5.18-rocm724-mi35x-20260828`. So do both values of `--dsa-prefill-backend` — `aiter` and `tilelang` alike — which is the clue that mattered, because that flag selects the *sparse attention* kernel while the abort is upstream of it.
 
-**This has not yet been isolated.** A run of the published command on the same image, same weights, same node — moving only those three flags — is in progress; when it answers, this section gets a verdict rather than a hypothesis. Anyone with a gfx950 node and 704 GiB can run it sooner: serve both recipes and send one 200k-token novel prompt to each.
+### What it actually is
 
-### What to do until it is isolated
+The DSA indexer builds a `[num_q x num_k]` **float32** logits tensor and hands it to AITER's `fp8_mqa_logits`, which picks its store instruction from that tensor's size:
 
-- **Do not advertise a context window you have not sent a cold prompt to.** `max_req_input_len` reads 1,048,570 on this pool and the server accepts the request; the abort is downstream of admission. A front door limit does not protect you, because it cannot tell a cold prompt from a cached one.
-- If you serve long documents on `high-throughput`, **assume this is live** until you have ladder evidence on your own build.
+```python
+# aiter/ops/triton/attention/fp8_mqa_logits.py
+BUFFER_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
+use_buffer_store = logits.numel() * logits.element_size() < BUFFER_LIMIT_BYTES
+```
+
+`buffer_store` addresses its tensor through a 32-bit byte offset, so above 2 GiB the gfx950 Gluon kernel takes a `gl.store` fallback — and **that fallback does not compile** for the shape the indexer asks for. Because it fails inside the Triton compiler rather than at runtime, it aborts the process instead of raising.
+
+Three conditions have to hold together. Each was pinned by a one-unit boundary on this node, calling AITER directly with no model and no server:
+
+| | condition | measured |
+|---|---|---|
+| 1 | `num_q * num_k * 4 >= 2**31` selects the fallback | 23,170² returns; **23,171²** asserts |
+| 2 | `index_n_heads <= 32` selects AITER's `BLOCK_M = 2` | at `num_heads = 64` the same over-2-GiB shape returns |
+| 3 | `num_q > 4096`, the other half of that choice | 4,096 × 200,000 returns; **4,097** × 200,000 asserts |
+
+Condition 2 is why this is not a GLM-5.3 problem: **`zai-org/GLM-5.2-FP8` declares the same `index_n_heads: 32`, `index_head_dim: 128`, `index_topk: 2048`.** Every `glm_moe_dsa` pool in this datasheet is on the same wall.
+
+### Where the wall is, for any recipe
+
+`num_q` is the query rows in one prefill chunk and `num_k` the prefix behind them, so a cold prompt of `L` tokens with `--chunked-prefill-size C` puts `min(L, C) * L * 4` bytes in that tensor. The wall follows:
+
+| `--chunked-prefill-size` | longest cold prefill that still answers |
+|---|---|
+| 2048 | 262,143 |
+| 4096 | *no abort* — `num_q` never exceeds 4096, so condition 3 fails |
+| 8192 | 65,535 |
+| **16384 — SGLang's own default on this GPU tier** | **32,767** |
+| 32768 (`high-throughput`) | 23,170 |
+| 131072 (published) | 23,170 |
+
+Two rows are the ones to read. The default is 16384, so **a stock DSA deployment on gfx950 aborts on a 32,768-token cold prompt** — this is not a consequence of the tuning in this playbook. And once `C` is at or above 23,171 the prompt fits one chunk, the tensor is square, and the bound is `sqrt(2**31 / 4)` regardless of how much larger `C` is.
+
+Verified points: 16,384 × 32,767 returns and 16,384 × 32,768 asserts; 2,048 × 262,143 returns and 2,048 × 262,144 takes the fallback and *returns*, because `num_q` is under 4096 there.
+
+### The fix, and what to do without it
+
+SGLang already chunks this tensor — `_should_chunk_mqa_logits` in `sglang/srt/layers/attention/dsa/dsa_indexer.py` exists for exactly that — but it bounds it only against free memory, which on a 288 GiB card measured **4,426,668,441 bytes, 2.06× what the kernel can address**. So the memory budget never binds first and the unchunked call is made. The upstream fix folds the addressing limit into that same budget: [sgl-project/sglang#36960](https://github.com/sgl-project/sglang/pull/36960).
+
+With it applied on this node and nothing else changed, the same prompt that had aborted the pool answered in 2.2 s, and cold prefills of 24,471 / 200,204 / 500,855 / **1,001,869** tokens all answered — the last in 181 s at 5,536 tok/s.
+
+Until it is in your image:
+
+- **Do not advertise a context window you have not sent a cold prompt to.** `max_req_input_len` reads 1,048,570 on this pool and the server accepts the request; the abort is downstream of admission, and a front door limit cannot tell a cold prompt from a cached one.
+- **`--chunked-prefill-size 4096` removes the abort** by keeping `num_q` under condition 3, and 8192 or 2048 move the wall per the table. Both cost prefill throughput, and neither is a guarantee: the query rows in one indexer call come from the whole prefill batch, not from one request.
 - The assertion string is a stable signature to grep a log for: ``Assertion `Begin <= End``.
 
 ## 2. Launch
@@ -149,6 +193,10 @@ A 16-wide point was taken and is **withheld** — a real workload was calling th
 
 ## 5. Open
 
-- **Isolate the abort.** The published command against `high-throughput`, three flags apart, one cold prompt each. Then, if the flags are exonerated, the same pair on `v0.5.18-rocm724-mi35x-20260828` — since the assertion is inside a compiled kernel, a fix arrives as an image.
-- **Find the boundary.** An ascending cold-prefill ladder — 50k, 100k, 200k, 400k — stopping at the first abort. Ascending because each abort costs a full weight load, and one crash is the price of the whole curve.
-- **A verified `bench_serving` table** at the GLM-5.2 shapes, so GLM-5.3 can join the datasheet properly.
+§1's two original open items are closed: the abort is isolated to AITER's
+over-2-GiB store fallback, and the boundary is a formula rather than a ladder
+result. What is still open:
+
+- **A verified `bench_serving` table** at the GLM-5.2 shapes, so GLM-5.3 can join the datasheet properly. §4 is one run per point through a front door and is not it.
+- **Throughput with the fix on a long-context recipe.** The numbers in §1 are single cold prefills, not a sweep, and the KV budget of the published command (bf16 KV, `--mem-fraction-static 0.80`) is a fraction of `high-throughput`'s 3,735,744 — a 1M-token conversation may be most of it. `max_total_num_tokens` read 1,538,560 there.
+- **The AITER side.** Two things belong upstream of SGLang and neither is fixed by the patch in §1: the `gl.store` fallback does not compile for `BLOCK_M = 2`, and `use_buffer_store` tests a view's `numel()` while the kernel addresses rows at a 256-aligned stride, so there is a narrow band under 2 GiB where the descriptor is chosen on a smaller number than the one addressed.
