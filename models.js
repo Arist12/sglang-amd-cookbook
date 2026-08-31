@@ -235,7 +235,7 @@ window.MODELS = [
           "sglang": "0.5.18.dev20260826+g937af8538b; SGLang #36607 head 9d208769398882e20220cb97722bf610397e66d8 plus one local metadata-unwrapping fix",
           "aiter": "c16d44b93a528b2a4bfd6d8d3409116d465872a9 plus glm53_bf16_tuned_gemm.csv from ROCm/aiter#5060 head 95565e33c8287a8c56bc31a84edf2de3ecc97662",
           "rocm": "7.2.4; torch 2.11.0+rocm7.2; HIP 7.2.26015",
-          "date": "2026-08-27T23:31:10Z through 2026-08-28 UTC; performance 00:08-00:57Z, accuracy 00:57-01:44Z",
+          "date": "2026-08-27T23:31:10Z through 2026-08-28T06:02:47Z. GLM-5.3: performance 00:08-00:57Z, accuracy 00:57-01:44Z. Same-stack GLM-5.2 control: performance and latency 03:10-03:48Z, accuracy 03:48-06:02Z",
           "node": "mia1-p02-g46, 8x AMD Instinct MI355X (gfx950), 288 GiB each"
         }
       }
