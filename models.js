@@ -264,6 +264,117 @@ window.MODELS = [
     ]
   },
   {
+    "id": "glm-5.3",
+    "name": "GLM-5.3",
+    "family": "GLM",
+    "hf_path": "zai-org/GLM-5.3",
+    "architecture": "MoE + DeepSeek Sparse Attention (DSA), model_type=glm_moe_dsa, 1M context; same architecture and tensor shapes as GLM-5.2-FP8 at the pinned revisions",
+    "precision": "block FP8 weights; fp8_e4m3 KV cache in the documented MI355X recipe",
+    "status": "not_benchmarked",
+    "params_active": "39B",
+    "params_total": "743B",
+    "active_params_billions": 39,
+    "bytes_per_param": 1,
+    "weights_gb": 704,
+    "context_len": "1048576",
+    "summary": [
+      {
+        "text": "Full zai-org/GLM-5.3 serving was verified on one 8x MI355X node with TP=8, TileLang DSA, AITER and FP8 KV. This is the 743B/39B glm_moe_dsa model, not the smaller GLM-5.3-Flash architecture."
+      },
+      {
+        "topic": "why it was missing",
+        "text": "The playbook merged in #6, but models.js had no GLM-5.3 entry; the static site renders only window.MODELS. This visible cell intentionally remains not-benchmarked because its throughput samples were single-run front-door checks rather than the repository's median-of-3 bench_serving protocol."
+      },
+      {
+        "topic": "weights",
+        "text": "At revisions 935644c05e76fc198714f4cca449fd8b970ff6d7 and ba978f7d347eaf65d22f1a86833408afdb953541, GLM-5.3 and GLM-5.2-FP8 both have 141 shards and exactly 755,632,050,320 safetensors bytes. There is no separate zai-org/GLM-5.3-FP8 repository; GLM-5.3 is already FP8."
+      },
+      {
+        "topic": "long context",
+        "text": "The affected AITER c16d44b9 plus Triton 3.7 stack aborts on cold prefills when the DSA indexer's float32 logits cross 2 GiB. SGLang #36960 fixes the chunking bound; with it, a 1,001,869-token cold prompt answered on MI355X."
+      }
+    ],
+    "configs": [
+      {
+        "gfx": "gfx950",
+        "hw_name": "MI355X",
+        "gpus": 8,
+        "nodes": "single",
+        "quant": "block FP8 weights, fp8_e4m3 KV cache",
+        "strategy": "high-throughput",
+        "verified": false,
+        "docker_image": "rocm/sgl-dev:v0.5.18-rocm724-mi35x-20260827",
+        "launch_python": "export SGLANG_USE_AITER=1\nexport PYTORCH_HIP_ALLOC_CONF=expandable_segments:True\npython3 -m sglang.launch_server \\\n  --model-path zai-org/GLM-5.3 \\\n  --revision 935644c05e76fc198714f4cca449fd8b970ff6d7 \\\n  --served-model-name glm-5.3 \\\n  --trust-remote-code \\\n  --tp 8 \\\n  --dsa-prefill-backend tilelang \\\n  --dsa-decode-backend tilelang \\\n  --kv-cache-dtype fp8_e4m3 \\\n  --reasoning-parser glm45 \\\n  --tool-call-parser glm47 \\\n  --watchdog-timeout 1200 \\\n  --chunked-prefill-size 32768 \\\n  --mem-fraction-static 0.92 \\\n  --cuda-graph-max-bs 64 \\\n  --max-running-requests 64 \\\n  --schedule-policy lpm \\\n  --num-continuous-decode-steps 2 \\\n  --host 0.0.0.0 --port 30000",
+        "parallelism": {
+          "tp": 8,
+          "ep": null,
+          "dp": null
+        },
+        "attention_backend": "TileLang DSA prefill and decode",
+        "moe_backend": "AITER-enabled TP-sharded MoE",
+        "aiter": {
+          "enabled": true,
+          "commit": "c16d44b93a528b2a4bfd6d8d3409116d465872a9",
+          "kernels": [
+            "FP8 MoE and GEMM",
+            "DSA indexer fp8_mqa_logits"
+          ],
+          "tuned_artifacts": [
+            "glm5_bf16_tuned_gemm.csv"
+          ],
+          "summary": "The serving run used the stock image's AITER c16d44b9. On its Triton 3.7 combination, the over-2-GiB fp8_mqa_logits store fallback needs the SGLang #36960 chunking fix for long cold prefills."
+        },
+        "env": [
+          {
+            "key": "SGLANG_USE_AITER",
+            "value": "1",
+            "why": "Enable the AITER MoE, GEMM and DSA-indexer paths used by the verified serving run."
+          },
+          {
+            "key": "PYTORCH_HIP_ALLOC_CONF",
+            "value": "expandable_segments:True",
+            "why": "Match the measured ROCm launch environment."
+          }
+        ],
+        "benchmarks": [],
+        "accuracy": [],
+        "vs_nvidia": [],
+        "gotchas": [
+          "This cell proves launch, parser selection, KV capacity and long-cold-prefill behavior; it does not publish standardized throughput. The available 64.6/119.7/210.9/400.5 aggregate tok/s at concurrency 1/2/4/8 were single front-door runs with 256 output tokens and are deliberately excluded from models.js.",
+          "On AITER c16d44b9 plus Triton 3.7, --chunked-prefill-size 32768 hits a hard cold-prompt boundary at 23,170 tokens: 23,171 produces an LLVM iota_range assertion. Apply SGLang #36960 before advertising long-context serving. Without the fix, 4096 avoids the single-request trigger but is not a deployment-wide guarantee because one indexer call can contain rows from multiple requests.",
+          "The 1M context is a per-request maximum, not a concurrency promise. The measured FP8-KV pool held about 3.736M tokens: three full 1M-token conversations fit, four do not.",
+          "Use numeric video/render group IDs when starting a container. Group names resolve against the container's /etc/group and can leave torch.cuda.device_count() reporting eight devices even though HIP context creation later fails."
+        ],
+        "provenance": {
+          "image": "rocm/sgl-dev:v0.5.18-rocm724-mi35x-20260827",
+          "pr": "sgl-project/sglang#36960 for the long-prefill fix; ROCm/aiter#5114 for the underlying AITER fallback",
+          "sglang": "0.5.18.dev20260827+g20a491d1d3; stock image, with #36960 applied only for the fixed long-prefill validation",
+          "aiter": "c16d44b93a528b2a4bfd6d8d3409116d465872a9",
+          "rocm": "7.2.4 in the primary image; independently reproduced on ROCm 7.2.0 and torch 2.9.1",
+          "date": "2026-08-29 through 2026-08-31",
+          "node": "8x AMD Instinct MI355X (gfx950), 288 GiB each"
+        }
+      }
+    ],
+    "gaps": [
+      {
+        "title": "Standardized performance table",
+        "kind": "metric",
+        "note": "Run the same fixed-shape, median-of-3 bench_serving ladder used by the other verified cells before changing this entry to verified or publishing throughput rows."
+      },
+      {
+        "title": "Long-context production image",
+        "kind": "latency",
+        "note": "Confirm that the selected image contains SGLang #36960, then repeat a cold near-1M-token prompt; a cached agent turn does not exercise the failing path."
+      },
+      {
+        "title": "Accuracy",
+        "kind": "accuracy",
+        "note": "No standardized GSM8K or AIME25 run is attached to the full GLM-5.3 cell yet."
+      }
+    ]
+  },
+  {
     "id": "glm-5.2-fp8",
     "name": "GLM-5.2-FP8",
     "family": "GLM",
@@ -1200,34 +1311,34 @@ window.MODELS = [
     ]
   },
   {
-    "id": "deepseek-v4-flash-fp8",
-    "name": "DeepSeek-V4-Flash-FP8",
+    "id": "deepseek-v4-flash-0731",
+    "name": "DeepSeek-V4-Flash-0731",
     "family": "DeepSeek",
-    "hf_path": "sgl-project/DeepSeek-V4-Flash-FP8",
-    "architecture": "MoE + Compressed MLA/MQA (num_key_value_heads=1), 256 routed experts, 43 layers, 1M context, native FP8 e4m3",
-    "precision": "FP8 (e4m3)",
+    "hf_path": "deepseek-ai/DeepSeek-V4-Flash-0731",
+    "architecture": "284B/13B MoE, 43 layers, 256 routed experts plus one shared expert, top-6 routing, compressed MLA/MQA, 1M context, bundled DSpark module",
+    "precision": "FP4 routed experts + block-FP8 dense weights; FP8 KV cache",
     "status": "verified",
-    "params_total": null,
-    "params_active": null,
-    "active_params_billions": null,
-    "bytes_per_param": 1,
-    "weights_gb": 274,
-    "context_len": "1M (max_model_len=1048576)",
+    "params_total": "284B",
+    "params_active": "13B",
+    "active_params_billions": 13,
+    "bytes_per_param": 0.95,
+    "weights_gb": 155,
+    "context_len": "1M (max_position_embeddings=1048576)",
     "summary": [
       {
-        "text": "DeepSeek-V4-Flash-FP8 (FP8 MoE, 256 routed experts, MQA/Compressed MLA with 1 KV head, 43 layers, 274 GiB weights) served on 8x MI355X (gfx950) via SGLang PR #23608."
+        "text": "The official DeepSeek-V4-Flash-0731 target checkpoint served successfully at TP=8 on one 8x MI355X node, using the dsv4 attention backend and AITER's FP4-expert path."
       },
       {
-        "topic": "config",
-        "text": "The \"correctness first\" config runs with every JIT fast-path disabled: torch-reference FlashMLA, Triton-forced MoE-FP8, CUDA graph off, radix cache off, 11 SGLANG_OPT_USE_*=false."
+        "topic": "correctness",
+        "text": "Three complete 1,319-question GSM8K runs scored 91.812%, 91.964% and 92.039%, all above the upstream >91% gate, with zero invalid answers. Native generation and structured tool calling also passed."
       },
       {
-        "topic": "bottleneck",
-        "text": "Decode is flat at ~4 tok/s at BS=1 because attention is tiny (1 KV head) and the bottleneck is per-token MoE-FP8 matmul plus the pure-PyTorch FlashMLA reference; TP=8 does not help a BS=1 workload since per-expert MoE work is already small."
+        "topic": "performance",
+        "text": "At fixed ISL=8192 / OSL=1024, median total throughput was 1,020 tok/s at concurrency 1, 6,499 at concurrency 8 and 18,800 at concurrency 32. Every point is the median of three rotated runs with <=0.66% spread."
       },
       {
-        "topic": "method",
-        "text": "Verified ISL/OSL latency sweep measured with bench_one_batch_server at TP=8 DP=8, BS=1."
+        "topic": "scope",
+        "text": "This is target-only unified_kv_triton validation. DSpark is not claimed on ROCm, and the separate plain triton path remains below its accuracy gate in SGLang #36388."
       }
     ],
     "configs": [
@@ -1236,236 +1347,336 @@ window.MODELS = [
         "hw_name": "MI355X",
         "gpus": 8,
         "nodes": "single",
-        "quant": "FP8 (e4m3) weights; MoE via Triton FP8; kv-cache silently fp8_e4m3",
+        "quant": "FP4 routed experts + block-FP8 dense weights; fp8_e4m3 KV",
         "strategy": "low-latency",
         "verified": true,
+        "docker_image": null,
+        "launch_python": "export SGLANG_DEFAULT_THINKING=1\nexport SGLANG_DSV4_REASONING_EFFORT=max\nexport SGLANG_USE_ROCM700A=0\nexport TORCH_BLAS_PREFER_HIPBLASLT=1\nexport SGLANG_DP_USE_GATHERV=1\nexport SGLANG_HACK_FLASHMLA_BACKEND=unified_kv_triton\nexport AITER_BF16_FP8_MOE_BOUND=0\nexport SGLANG_DSV4_FP4_EXPERTS=true\npython3 -m sglang.launch_server \\\n  --model-path /data/DeepSeek-V4-Flash-0731 \\\n  --served-model-name deepseek-v4-flash-0731 \\\n  --trust-remote-code \\\n  --tp 8 \\\n  --disable-radix-cache \\\n  --attention-backend dsv4 \\\n  --page-size 256 \\\n  --mem-fraction-static 0.90 \\\n  --swa-full-tokens-ratio 0.1 \\\n  --disable-shared-experts-fusion \\\n  --kv-cache-dtype fp8_e4m3 \\\n  --chunked-prefill-size 8192 \\\n  --max-running-requests 256 \\\n  --tool-call-parser deepseekv4 \\\n  --reasoning-parser deepseek-v4 \\\n  --watchdog-timeout 1200 \\\n  --host 127.0.0.1 --port 31000",
         "parallelism": {
           "tp": 8,
           "ep": null,
-          "dp": 8
+          "dp": null
         },
-        "attention_backend": "compressed (torch FlashMLA reference, SGLANG_HACK_FLASHMLA_BACKEND=torch)",
-        "moe_backend": "Triton FP8 (SGLANG_FORCE_TRITON_MOE_FP8=1)",
-        "docker_image": "sglang-dsv4-mi355x:flash-r1",
-        "launch_python": "python3 -m sglang.launch_server \\\n    --model-path /hf-cache/models--sgl-project--DeepSeek-V4-Flash-FP8/snapshots/ae01d80c06cdfe30581edfd0e1c5449dc7ed7f17 \\\n    --served-model-name dsv4-flash \\\n    --trust-remote-code \\\n    --tp 8 --dp 8 --enable-dp-attention \\\n    --disable-radix-cache --attention-backend compressed \\\n    --max-running-requests 256 --page-size 256 --chunked-prefill-size 8192 \\\n    --kv-cache-dtype auto \\\n    --host 0.0.0.0 --port 31000 \\\n    --disable-shared-experts-fusion --disable-cuda-graph \\\n    --tool-call-parser deepseekv4 --reasoning-parser deepseek-v4",
+        "attention_backend": "dsv4 with unified_kv_triton",
+        "moe_backend": "AITER two-stage afp8/wfp4 (FlyDSL + Opus)",
         "aiter": {
           "enabled": true,
-          "commit": null,
-          "kernels": [],
+          "commit": "d9e5ef7ce08ee7045d583aed768cff41aa9210fe",
+          "kernels": [
+            "two-stage FP8-activation / FP4-weight routed MoE",
+            "FlyDSL moe1 kernels on gfx950",
+            "block-FP8 dense GEMM"
+          ],
           "tuned_artifacts": [],
-          "summary": "SGLANG_USE_AITER=1 is set, but in this correctness-first config AITER does not provide the hot kernels: MoE-FP8 is forced to Triton (SGLANG_FORCE_TRITON_MOE_FP8=1), FlashMLA is forced to a pure-PyTorch reference (SGLANG_HACK_FLASHMLA_BACKEND=torch), and 11 SGLANG_OPT_USE_*=false switches disable every JIT fast-path. No aiter commit hash or tuned GEMM/MoE artifacts are recorded in any source."
+          "summary": "Runtime logs prove the AITER afp8/wfp4 route: flydsl_moe1_afp8_wfp4_bf16 paired with FlyDSL or Opus moe2 kernels. This is not the old FP8 preview fallback."
         },
         "env": [
           {
-            "key": "CUDA_VISIBLE_DEVICES",
-            "value": "0,1,2,3,4,5,6,7",
-            "why": "All 8 MI355X GPUs for the TP=8 DP=8 benchmarked topology (script default is 0,1,2,3 for TP=4)"
-          },
-          {
-            "key": "SGLANG_OPT_USE_FUSED_COMPRESS",
-            "value": "false",
-            "why": "Disable fused compress JIT fast-path (correctness-first, no CUDA toolchain port)"
-          },
-          {
-            "key": "SGLANG_OPT_USE_OLD_COMPRESSOR",
-            "value": "true",
-            "why": "Use the old non-JIT compressor path"
-          },
-          {
-            "key": "SGLANG_OPT_USE_TILELANG_SWA_PREPARE",
-            "value": "false",
-            "why": "Disable TileLang SWA-prepare JIT kernel"
-          },
-          {
-            "key": "SGLANG_OPT_USE_JIT_KERNEL_FUSED_TOPK",
-            "value": "false",
-            "why": "Disable JIT fused top-k kernel"
-          },
-          {
-            "key": "SGLANG_OPT_USE_FUSED_HASH_TOPK",
-            "value": "false",
-            "why": "Disable fused hash top-k kernel"
-          },
-          {
-            "key": "SGLANG_HACK_FLASHMLA_BACKEND",
-            "value": "torch",
-            "why": "Force pure-PyTorch FlashMLA reference instead of a JIT/CK kernel (correctness, slow)"
-          },
-          {
-            "key": "SGLANG_OPT_DEEPGEMM_HC_PRENORM",
-            "value": "false",
-            "why": "Disable DeepGEMM HC prenorm fast-path"
-          },
-          {
-            "key": "SGLANG_OPT_USE_TILELANG_MHC_PRE",
-            "value": "false",
-            "why": "Disable TileLang MHC pre JIT kernel"
-          },
-          {
-            "key": "SGLANG_OPT_USE_TILELANG_MHC_POST",
-            "value": "false",
-            "why": "Disable TileLang MHC post JIT kernel"
-          },
-          {
-            "key": "SGLANG_ENABLE_THINKING",
+            "key": "SGLANG_DEFAULT_THINKING",
             "value": "1",
-            "why": "Thinking mode on; model emits <think>...</think>answer"
+            "why": "Enable the checkpoint's default thinking mode used in validation."
           },
           {
-            "key": "SGLANG_USE_AITER",
-            "value": "1",
-            "why": "Enable AITER (though MoE/MLA are forced to Triton/torch here)"
+            "key": "SGLANG_DSV4_REASONING_EFFORT",
+            "value": "max",
+            "why": "Use the official max reasoning-effort profile for DeepSeek-V4 prompt encoding."
           },
           {
             "key": "SGLANG_USE_ROCM700A",
-            "value": "1",
-            "why": "ROCm 7.0.0-alpha path selection for the MI355X base image"
+            "value": "0",
+            "why": "Use the production ROCm 7.2 path rather than the old ROCm 7.0 alpha compatibility route."
           },
           {
-            "key": "SGLANG_TOPK_TRANSFORM_512_TORCH",
+            "key": "TORCH_BLAS_PREFER_HIPBLASLT",
             "value": "1",
-            "why": "Use torch path for the 512-wide top-k transform"
+            "why": "Select hipBLASLt for supported dense GEMMs in the measured runtime."
           },
           {
-            "key": "SGLANG_FP8_PAGED_MQA_LOGITS_TORCH",
+            "key": "SGLANG_DP_USE_GATHERV",
             "value": "1",
-            "why": "Use torch path for FP8 paged MQA logits"
+            "why": "Match the validated SGLang ROCm runtime environment."
+          },
+          {
+            "key": "SGLANG_HACK_FLASHMLA_BACKEND",
+            "value": "unified_kv_triton",
+            "why": "Select the only DeepSeek-V4 attention path validated above the accuracy gate on MI355X."
+          },
+          {
+            "key": "AITER_BF16_FP8_MOE_BOUND",
+            "value": "0",
+            "why": "Use the AITER FP8-activation / FP4-weight MoE route for every measured token count."
           },
           {
             "key": "SGLANG_DSV4_FP4_EXPERTS",
-            "value": "false",
-            "why": "Do not use FP4 experts; keep FP8 experts"
-          },
+            "value": "true",
+            "why": "Load and dispatch the checkpoint's packed FP4 routed-expert weights."
+          }
+        ],
+        "accuracy": [
           {
-            "key": "SGLANG_OPT_DPSK_V4_RADIX",
-            "value": "0",
-            "why": "Disable V4 radix optimization (compressed-attention radix not stable on HIP)"
-          },
-          {
-            "key": "SGLANG_OPT_USE_OVERLAP_STORE_CACHE",
-            "value": "false",
-            "why": "Disable overlap store-cache fast-path"
-          },
-          {
-            "key": "SGLANG_OPT_USE_FUSED_STORE_CACHE",
-            "value": "false",
-            "why": "Disable fused store-cache fast-path"
-          },
-          {
-            "key": "SGLANG_FORCE_TRITON_MOE_FP8",
-            "value": "1",
-            "why": "Force Triton MoE-FP8 kernel (the AMD-available MoE path)"
-          },
-          {
-            "key": "HF_HUB_OFFLINE",
-            "value": "1",
-            "why": "Use local HF cache mount, no network"
+            "name": "GSM8K",
+            "value": "91.964%",
+            "note": "Median of three full 1,319-question eight-shot runs at temperature 0 and max_new_tokens=512: 91.812%, 91.964%, 92.039%; invalid=0 in every round. Dataset SHA-256 3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14.",
+            "ref": "upstream MI35x gate: accuracy > 91%"
           }
         ],
         "benchmarks": [
           {
-            "isl": 2048,
+            "isl": 8192,
             "osl": 1024,
             "concurrency": 1,
-            "ttft_ms": 5470,
-            "decode_tok_s": 3.99,
-            "prefill_tok_s": 374.4,
-            "total_tok_s": 11.71,
-            "source": "dsv4_flash_playbook.md"
-          },
-          {
-            "isl": 2048,
-            "osl": 2048,
-            "concurrency": 1,
-            "ttft_ms": 5360,
-            "decode_tok_s": 3.97,
-            "prefill_tok_s": 382.1,
-            "total_tok_s": 7.86,
-            "source": "dsv4_flash_playbook.md"
-          },
-          {
-            "isl": 4096,
-            "osl": 1024,
-            "concurrency": 1,
-            "ttft_ms": 9530,
-            "decode_tok_s": 4.02,
-            "prefill_tok_s": 429.9,
-            "total_tok_s": 19.37,
-            "source": "dsv4_flash_playbook.md"
-          },
-          {
-            "isl": 4096,
-            "osl": 2048,
-            "concurrency": 1,
-            "ttft_ms": 10210,
-            "decode_tok_s": 3.99,
-            "prefill_tok_s": 401.2,
-            "total_tok_s": 11.74,
-            "source": "dsv4_flash_playbook.md"
+            "ttft_ms": 139.64,
+            "tpot_ms": 8.69,
+            "decode_tok_s": 115.1,
+            "output_tok_s": 113.35,
+            "total_tok_s": 1020.12,
+            "tok_s_per_gpu": 127.5,
+            "source": "dsv4_flash_playbook.md section 5 (median of 3 runs; 2026-08-31; 8x MI355X; DeepSeek-V4-Flash-0731 7872f01b1d; SGLang 71de97b264; AITER d9e5ef7ce0; unified_kv_triton)"
           },
           {
             "isl": 8192,
             "osl": 1024,
-            "concurrency": 1,
-            "ttft_ms": 20030,
-            "decode_tok_s": 3.99,
-            "prefill_tok_s": 409,
-            "total_tok_s": 33.28,
-            "source": "dsv4_flash_playbook.md"
+            "concurrency": 8,
+            "ttft_ms": 731.37,
+            "tpot_ms": 10.37,
+            "output_tok_s": 722.07,
+            "total_tok_s": 6498.67,
+            "tok_s_per_gpu": 812.3,
+            "source": "dsv4_flash_playbook.md section 5 (median of 3 runs; 2026-08-31; 8x MI355X; DeepSeek-V4-Flash-0731 7872f01b1d; SGLang 71de97b264; AITER d9e5ef7ce0; unified_kv_triton)"
           },
           {
             "isl": 8192,
-            "osl": 2048,
-            "concurrency": 1,
-            "ttft_ms": 19490,
-            "decode_tok_s": 3.99,
-            "prefill_tok_s": 420.3,
-            "total_tok_s": 19.2,
-            "source": "dsv4_flash_playbook.md"
+            "osl": 1024,
+            "concurrency": 32,
+            "ttft_ms": 2214.94,
+            "tpot_ms": 13.16,
+            "output_tok_s": 2088.91,
+            "total_tok_s": 18800.22,
+            "tok_s_per_gpu": 2350,
+            "source": "dsv4_flash_playbook.md section 5 (median of 3 runs; 2026-08-31; 8x MI355X; DeepSeek-V4-Flash-0731 7872f01b1d; SGLang 71de97b264; AITER d9e5ef7ce0; unified_kv_triton)"
           }
         ],
-        "accuracy": [],
         "vs_nvidia": [],
         "provenance": {
-          "image": "sglang-dsv4-mi355x:flash-r1 (base rocm/sgl-dev:deepseek-v4-mi35x, digest sha256:a5f71877...)",
-          "pr": "#23608",
-          "sglang": "0.5.8.dev20260129+gf959851eb + PR #23608 head 26fbc935300a3bfba34f3dfa8925310929f82680 overlay + 2 AMD patches (drop @dataclass from deepseek_v4.py, stub kernelkit/bench.py)",
-          "aiter": null,
-          "rocm": "ROCm 7.0 (SGLANG_USE_ROCM700A=1)",
-          "date": "April 2026",
-          "node": "mia1-p02-g45 (container dsv4-flash-tp8), 8x MI355X"
+          "image": "No frozen image; clean host source/runtime overlay",
+          "sglang": "source 71de97b264b04dcd514cf904003028aefe9775c8; installed wheel metadata 0.5.16.dev20260728+g32c30c0f96",
+          "aiter": "d9e5ef7ce08ee7045d583aed768cff41aa9210fe",
+          "rocm": "7.2.0; torch 2.9.1+rocm7.2.0.git7e1940d4; Triton 3.6.0; FlyDSL 0.2.4",
+          "date": "2026-08-31 UTC",
+          "node": "mia1-p02-g23, 8x AMD Instinct MI355X (gfx950), single node",
+          "pr": "sgl-project/sglang#36388 documents the plain-triton accuracy blocker",
+          "weights": "revision 7872f01b1d1fe23eabc4c98b48bffcef5a386062; 48 shards; index SHA-256 98efab455cf08dfbbbaaba6f570e1bf10bf927d2b4c3c453a59c2f6f0e3be92b"
         },
         "gotchas": [
-          "Decode is flat at ~4 tok/s across all ISL/OSL at BS=1 because V4-Flash is MQA (num_key_value_heads=1) so attention is tiny regardless of context; the real bottleneck is per-token MoE-FP8 matmul plus the pure-PyTorch torch-reference FlashMLA. TP=8 gives the same decode speed as TP=4 because per-expert MoE work is already small and all-to-all overhead eats any TP gain. This is the correctness-first config, not a tuned one.",
-          "--enable-dp-attention is MANDATORY: V4 uses MQA (1 KV head) so attention cannot be TP-sharded; DP-attention replicates attention across all GPUs.",
-          "DP-attention in this image silently auto-lowers --chunked-prefill-size from 8192 to 1024 to dodge an MoE-kernel sizing issue (warning at server_args.py:2057); every benchmark row actually ran at chunked_prefill_size=1024.",
-          "--kv-cache-dtype auto is silently overridden to fp8_e4m3 for V4 (server_args.py:1193); the 'no scaling factors provided' warning is cosmetic for short contexts.",
-          "The deepseek-v4 reasoning parser does not split <think>...</think> from the answer; both end up in choices[0].message.content and reasoning_content is always empty.",
-          "Two AMD-side patches are REQUIRED on top of PR #23608 head 26fbc93 (baked into Dockerfile.dsv4): (1) drop @dataclass from python/sglang/srt/configs/deepseek_v4.py or import fails with TypeError because PretrainedConfig's metaclass strips field defaults; (2) create a stub for python/sglang/srt/flashmla_tests/kernelkit/bench.py (NotImplementedError bench_by_cuda_events / bench_kineto) because kernelkit/__init__.py unconditionally imports it but no file exists in the image or PR branch.",
-          "Order-of-magnitude speed-ups require: re-enabling JIT kernels once their ROCm ports land in PR #23608, larger batch sizes (MoE amortizes across tokens, BS=1 is worst case), radix cache re-enabled once compressed-attention radix is stable on HIP, and CUDA-graph replay for decode (ROCm HIP-graph needs driver support).",
-          "Served-model-name is 'dsv4-flash'; pass that as the model field in chat calls, not the HF repo id.",
-          "Total and active parameter counts are NOT documented in any cookbook source; only 256 routed experts / 43 layers / 1 KV head / FP8 e4m3 / 274 GiB weights are stated. Any '~430B total, ~17B active' figure is unverified and was removed from this record."
+          "Only SGLANG_HACK_FLASHMLA_BACKEND=unified_kv_triton is validated. The official 0731 checkpoint scored 0.9007 and 0.8908 on retry with the separate plain triton path in SGLang #36388, below its 0.91 gate.",
+          "This is target-only serving. The bundled DSpark weights were not loaded, so no speculative-decoding speedup or accuracy claim is made on ROCm.",
+          "The deepseek-v4 reasoning parser currently leaves reasoning text and a stray </think> in message.content while reasoning_content stays null. Tool-call parsing itself passed, and all four checkpoint-provided encoding/parser fixtures passed.",
+          "The measured runtime is a source overlay, not a frozen official image. Reproduce from the recorded SGLang and AITER SHAs; the installed wheel version string does not identify the executed Python source.",
+          "Radix cache and shared-expert fusion were disabled. Enabling either is a different serving contract and requires revalidation."
         ]
       }
     ],
     "gaps": [
       {
-        "title": "Tuned (not correctness-first) config",
+        "title": "DSpark on ROCm",
         "kind": "perf",
-        "note": "Current config disables every JIT fast-path (~4 tok/s decode). Re-enable kernels as their ROCm ports land in PR #23608, then re-bench latency + throughput.",
-        "cmd": "# single-request latency (offline)\npython3 -m sglang.bench_one_batch_server \\\n  --model-path sgl-project/DeepSeek-V4-Flash-FP8 --base-url http://127.0.0.1:31000 \\\n  --batch-size 1 --input-len 1024 8192 16384 --output-len 1024 \\\n  --dataset-name random --skip-warmup"
+        "note": "The checkpoint carries an MTP/DSpark module, but this run was target-only. Do not add --speculative-algorithm DSPARK until the ROCm path passes correctness and controlled A/B performance."
       },
       {
-        "title": "Batch > 1 throughput",
-        "kind": "metric",
-        "note": "BS=1 is the worst case for MoE; sweep concurrency where per-expert work amortizes.",
-        "cmd": "# throughput vs concurrency (online)\nfor C in 1 16 64; do\n  python3 -m sglang.bench_serving --backend sglang --dataset-name random \\\n    --random-input-len 8192 --random-output-len 1024 --random-range-ratio 1.0 \\\n    --num-prompts $((C*2)) --max-concurrency $C --port 31000\ndone"
+        "title": "Plain triton attention",
+        "kind": "accuracy",
+        "note": "SGLang #36388 is blocked on a reproducible accuracy regression for the official 0731 checkpoint. Keep unified_kv_triton as the only published backend until that is resolved."
       },
       {
-        "title": "Accuracy (GSM8K / AIME25)",
-        "kind": "metric",
-        "note": "No accuracy measured.",
-        "cmd": "# GSM8K (chat + thinking)\npython3 -m sglang.test.run_eval --port 31000 --eval-name gsm8k \\\n  --max-tokens 8192 --temperature 0 --num-examples 1319\n\n# AIME25 — use sgl-eval (NV official harness), NOT in-tree run_eval\npip install git+https://github.com/sgl-project/sgl-eval\nsgl-eval run aime25 --api-key EMPTY --base-url http://localhost:31000/v1 \\\n  --n-repeats 16 --max-tokens 64000 --temperature 1.0 --top-p 0.95 --thinking"
+        "title": "Frozen runtime image",
+        "kind": "repro",
+        "note": "Package the exact source/AITER/FlyDSL overlay into an immutable image, then repeat the three-round gate before replacing the source-overlay provenance."
+      }
+    ]
+  },
+  {
+    "id": "deepseek-v4-pro-0813",
+    "name": "DeepSeek-V4-Pro-0813",
+    "family": "DeepSeek",
+    "hf_path": "deepseek-ai/DeepSeek-V4-Pro-0813",
+    "architecture": "1.6T/49B MoE, 61 layers, 384 routed experts plus one shared expert, top-6 routing, compressed MLA/MQA, 1M context, bundled DSpark module",
+    "precision": "FP4 routed experts + block-FP8 dense weights; FP8 KV cache",
+    "status": "verified",
+    "params_total": "1.6T",
+    "params_active": "49B",
+    "active_params_billions": 49,
+    "bytes_per_param": 0.85,
+    "weights_gb": 831,
+    "context_len": "1M (max_position_embeddings=1048576)",
+    "summary": [
+      {
+        "text": "The official DeepSeek-V4-Pro-0813 target checkpoint served successfully at TP=8 on one 8x MI355X node, using the dsv4 attention backend and AITER's FP4-expert path."
+      },
+      {
+        "topic": "correctness",
+        "text": "Three complete 1,319-question GSM8K runs scored 94.693%, 94.466% and 94.617%, all above the upstream >92% gate, with zero invalid answers. Native generation and structured tool calling also passed."
+      },
+      {
+        "topic": "performance",
+        "text": "At fixed ISL=8192 / OSL=1024, median total throughput was 692 tok/s at concurrency 1, 4,058 at concurrency 8 and 10,101 at concurrency 32. Every point is the median of three rotated runs with <=0.16% spread."
+      },
+      {
+        "topic": "startup",
+        "text": "Warm local startup took about 19 minutes 54 seconds. Most TP ranks loaded in 241-260 seconds, while TP0 took 912 seconds and TP7 took 1,043 seconds, so long quiet periods during load are expected."
+      }
+    ],
+    "configs": [
+      {
+        "gfx": "gfx950",
+        "hw_name": "MI355X",
+        "gpus": 8,
+        "nodes": "single",
+        "quant": "FP4 routed experts + block-FP8 dense weights; fp8_e4m3 KV",
+        "strategy": "low-latency",
+        "verified": true,
+        "docker_image": null,
+        "launch_python": "export SGLANG_DEFAULT_THINKING=1\nexport SGLANG_DSV4_REASONING_EFFORT=max\nexport SGLANG_USE_ROCM700A=0\nexport TORCH_BLAS_PREFER_HIPBLASLT=1\nexport SGLANG_DP_USE_GATHERV=1\nexport SGLANG_HACK_FLASHMLA_BACKEND=unified_kv_triton\nexport AITER_BF16_FP8_MOE_BOUND=0\nexport SGLANG_DSV4_FP4_EXPERTS=true\npython3 -m sglang.launch_server \\\n  --model-path /data/DeepSeek-V4-Pro-0813 \\\n  --served-model-name deepseek-v4-pro-0813 \\\n  --trust-remote-code \\\n  --tp 8 \\\n  --disable-radix-cache \\\n  --attention-backend dsv4 \\\n  --page-size 256 \\\n  --mem-fraction-static 0.90 \\\n  --swa-full-tokens-ratio 0.1 \\\n  --disable-shared-experts-fusion \\\n  --kv-cache-dtype fp8_e4m3 \\\n  --chunked-prefill-size 8192 \\\n  --max-running-requests 256 \\\n  --tool-call-parser deepseekv4 \\\n  --reasoning-parser deepseek-v4 \\\n  --watchdog-timeout 1200 \\\n  --host 127.0.0.1 --port 31000",
+        "parallelism": {
+          "tp": 8,
+          "ep": null,
+          "dp": null
+        },
+        "attention_backend": "dsv4 with unified_kv_triton",
+        "moe_backend": "AITER two-stage afp8/wfp4 (FlyDSL + Opus)",
+        "aiter": {
+          "enabled": true,
+          "commit": "d9e5ef7ce08ee7045d583aed768cff41aa9210fe",
+          "kernels": [
+            "two-stage FP8-activation / FP4-weight routed MoE",
+            "FlyDSL moe1 kernels on gfx950",
+            "block-FP8 dense GEMM"
+          ],
+          "tuned_artifacts": [],
+          "summary": "Runtime logs prove the AITER afp8/wfp4 route: flydsl_moe1_afp8_wfp4_bf16 paired with FlyDSL or Opus moe2 kernels. This is not the old FP8 preview fallback."
+        },
+        "env": [
+          {
+            "key": "SGLANG_DEFAULT_THINKING",
+            "value": "1",
+            "why": "Enable the checkpoint's default thinking mode used in validation."
+          },
+          {
+            "key": "SGLANG_DSV4_REASONING_EFFORT",
+            "value": "max",
+            "why": "Use the official max reasoning-effort profile for DeepSeek-V4 prompt encoding."
+          },
+          {
+            "key": "SGLANG_USE_ROCM700A",
+            "value": "0",
+            "why": "Use the production ROCm 7.2 path rather than the old ROCm 7.0 alpha compatibility route."
+          },
+          {
+            "key": "TORCH_BLAS_PREFER_HIPBLASLT",
+            "value": "1",
+            "why": "Select hipBLASLt for supported dense GEMMs in the measured runtime."
+          },
+          {
+            "key": "SGLANG_DP_USE_GATHERV",
+            "value": "1",
+            "why": "Match the validated SGLang ROCm runtime environment."
+          },
+          {
+            "key": "SGLANG_HACK_FLASHMLA_BACKEND",
+            "value": "unified_kv_triton",
+            "why": "Select the only DeepSeek-V4 attention path validated above the accuracy gate on MI355X."
+          },
+          {
+            "key": "AITER_BF16_FP8_MOE_BOUND",
+            "value": "0",
+            "why": "Use the AITER FP8-activation / FP4-weight MoE route for every measured token count."
+          },
+          {
+            "key": "SGLANG_DSV4_FP4_EXPERTS",
+            "value": "true",
+            "why": "Load and dispatch the checkpoint's packed FP4 routed-expert weights."
+          }
+        ],
+        "accuracy": [
+          {
+            "name": "GSM8K",
+            "value": "94.617%",
+            "note": "Median of three full 1,319-question eight-shot runs at temperature 0 and max_new_tokens=512: 94.693%, 94.466%, 94.617%; invalid=0 in every round. Dataset SHA-256 3730d312f6e3440559ace48831e51066acaca737f6eabec99bccb9e4b3c39d14.",
+            "ref": "upstream gate: accuracy > 92%"
+          }
+        ],
+        "benchmarks": [
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 1,
+            "ttft_ms": 314.58,
+            "tpot_ms": 12.69,
+            "decode_tok_s": 78.8,
+            "output_tok_s": 76.93,
+            "total_tok_s": 692.37,
+            "tok_s_per_gpu": 86.5,
+            "source": "dsv4_pro_playbook.md section 5 (median of 3 runs; 2026-08-31; 8x MI355X; DeepSeek-V4-Pro-0813 72e1d3230f; SGLang 71de97b264; AITER d9e5ef7ce0; unified_kv_triton)"
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 8,
+            "ttft_ms": 1628.72,
+            "tpot_ms": 16.18,
+            "output_tok_s": 450.86,
+            "total_tok_s": 4057.7,
+            "tok_s_per_gpu": 507.2,
+            "source": "dsv4_pro_playbook.md section 5 (median of 3 runs; 2026-08-31; 8x MI355X; DeepSeek-V4-Pro-0813 72e1d3230f; SGLang 71de97b264; AITER d9e5ef7ce0; unified_kv_triton)"
+          },
+          {
+            "isl": 8192,
+            "osl": 1024,
+            "concurrency": 32,
+            "ttft_ms": 5109.56,
+            "tpot_ms": 23.51,
+            "output_tok_s": 1122.29,
+            "total_tok_s": 10100.64,
+            "tok_s_per_gpu": 1262.6,
+            "source": "dsv4_pro_playbook.md section 5 (median of 3 runs; 2026-08-31; 8x MI355X; DeepSeek-V4-Pro-0813 72e1d3230f; SGLang 71de97b264; AITER d9e5ef7ce0; unified_kv_triton)"
+          }
+        ],
+        "vs_nvidia": [],
+        "provenance": {
+          "image": "No frozen image; clean host source/runtime overlay",
+          "sglang": "source 71de97b264b04dcd514cf904003028aefe9775c8; installed wheel metadata 0.5.16.dev20260728+g32c30c0f96",
+          "aiter": "d9e5ef7ce08ee7045d583aed768cff41aa9210fe",
+          "rocm": "7.2.0; torch 2.9.1+rocm7.2.0.git7e1940d4; Triton 3.6.0; FlyDSL 0.2.4",
+          "date": "2026-08-31 UTC",
+          "node": "mia1-p02-g23, 8x AMD Instinct MI355X (gfx950), single node",
+          "pr": null,
+          "weights": "revision 72e1d3230f6c080a530b0a1d46f8eb4602340597; 66 shards; index SHA-256 2de2ac1e43134f8b03bf6156067715b7c3c73b1a507329e606023c601a56d30a"
+        },
+        "gotchas": [
+          "This is target-only serving. The bundled DSpark weights were not loaded, so no speculative-decoding speedup or accuracy claim is made on ROCm.",
+          "Only SGLANG_HACK_FLASHMLA_BACKEND=unified_kv_triton is covered. The separate plain triton path was not substituted into the Pro validation while the corresponding official Flash-0731 regression remains open in SGLang #36388.",
+          "The deepseek-v4 reasoning parser currently leaves reasoning text and a stray </think> in message.content while reasoning_content stays null. Tool-call parsing itself passed, and all four checkpoint-provided encoding/parser fixtures passed.",
+          "Two identical temperature-zero smoke requests produced different reasoning text but the same correct final answer. The three full GSM8K runs are the stability evidence; byte-identical generation is not claimed.",
+          "The measured runtime is a source overlay, not a frozen official image. Reproduce from the recorded SGLang and AITER SHAs; the installed wheel version string does not identify the executed Python source.",
+          "Warm local startup took about 19 minutes 54 seconds and rank load times were highly uneven. Do not diagnose a hang from a quiet log alone.",
+          "Radix cache and shared-expert fusion were disabled. Enabling either is a different serving contract and requires revalidation."
+        ]
+      }
+    ],
+    "gaps": [
+      {
+        "title": "DSpark on ROCm",
+        "kind": "perf",
+        "note": "The checkpoint carries an MTP/DSpark module, but this run was target-only. Do not add --speculative-algorithm DSPARK until the ROCm path passes correctness and controlled A/B performance."
+      },
+      {
+        "title": "Alternative attention backend",
+        "kind": "accuracy",
+        "note": "Only unified_kv_triton was exercised. Validate any alternative DeepSeek-V4 attention backend independently before publishing it."
+      },
+      {
+        "title": "Frozen runtime image",
+        "kind": "repro",
+        "note": "Package the exact source/AITER/FlyDSL overlay into an immutable image, then repeat the three-round gate before replacing the source-overlay provenance."
       }
     ]
   },

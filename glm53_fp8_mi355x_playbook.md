@@ -182,7 +182,7 @@ A corollary worth stating for GLM-5.3 specifically, because its `max_position_em
 
 ## 4. Throughput — indicative only, and not to the standard of this repository's tables
 
-**These are not `sglang.bench_serving` numbers and they are not median-of-3.** They were taken through a serving front door on this fleet with a fixed 256-output-token prompt, single run per point, and they are published here as an order-of-magnitude check that GLM-5.3 costs what GLM-5.2 costs — not as datasheet rows. They are deliberately **not** added to `models.js`.
+**These are not `sglang.bench_serving` numbers and they are not median-of-3.** They were taken through a serving front door on this fleet with a fixed 256-output-token prompt, single run per point, and they are published here as an order-of-magnitude check that GLM-5.3 costs what GLM-5.2 costs — not as datasheet rows. The model now has a visible `not_benchmarked` recipe in `models.js`, but these figures remain deliberately excluded from its benchmark table.
 
 | concurrency | aggregate tok/s | per-stream tok/s |
 |---|---|---|

@@ -183,6 +183,130 @@ if (!glm53) {
   }
 }
 
+const glm53Full = MODELS.find((m) => m.id === "glm-5.3");
+if (!glm53Full) {
+  fail("full glm-5.3 entry missing");
+} else {
+  const cell = (glm53Full.configs || []).find(
+    (c) => c.gfx === "gfx950" && c.strategy === "high-throughput");
+  if (!cell) {
+    fail("full glm-5.3 visible gfx950 cell missing");
+  } else {
+    if (glm53Full.status !== "not_benchmarked" || cell.verified) {
+      fail("full glm-5.3 must distinguish serving verification from benchmark verification");
+    }
+    if ((cell.benchmarks || []).length) {
+      fail("full glm-5.3 publishes non-standard single-run throughput as benchmark rows");
+    }
+    for (const required of [
+      "--revision 935644c05e76fc198714f4cca449fd8b970ff6d7",
+      "--kv-cache-dtype fp8_e4m3",
+      "--dsa-prefill-backend tilelang",
+      "--dsa-decode-backend tilelang",
+    ]) {
+      if (!(cell.launch_python || "").includes(required)) {
+        fail(`full glm-5.3 command missing ${required}`);
+      }
+    }
+    if (!(cell.gotchas || []).some((item) => /#36960/.test(item))) {
+      fail("full glm-5.3 does not surface the required long-prefill fix");
+    } else {
+      pass("full glm-5.3: visible serving-verified cell, no benchmark rows");
+    }
+  }
+}
+
+if (MODELS.some((m) => m.id === "deepseek-v4-flash-fp8")) {
+  fail("superseded DeepSeek-V4-Flash preview entry is still published");
+}
+
+for (const spec of [
+  {
+    id: "deepseek-v4-flash-0731",
+    path: "deepseek-ai/DeepSeek-V4-Flash-0731",
+    localPath: "/data/DeepSeek-V4-Flash-0731",
+    accuracy: "91.964%",
+    totals: { 1: 1020.12, 8: 6498.67, 32: 18800.22 },
+    revision: "7872f01b1d1fe23eabc4c98b48bffcef5a386062",
+    indexSha: "98efab455cf08dfbbbaaba6f570e1bf10bf927d2b4c3c453a59c2f6f0e3be92b",
+  },
+  {
+    id: "deepseek-v4-pro-0813",
+    path: "deepseek-ai/DeepSeek-V4-Pro-0813",
+    localPath: "/data/DeepSeek-V4-Pro-0813",
+    accuracy: "94.617%",
+    totals: { 1: 692.37, 8: 4057.7, 32: 10100.64 },
+    revision: "72e1d3230f6c080a530b0a1d46f8eb4602340597",
+    indexSha: "2de2ac1e43134f8b03bf6156067715b7c3c73b1a507329e606023c601a56d30a",
+  },
+]) {
+  const model = MODELS.find((m) => m.id === spec.id);
+  if (!model) {
+    fail(`${spec.id} entry missing`);
+    continue;
+  }
+  if (model.hf_path !== spec.path || model.status !== "verified") {
+    fail(`${spec.id}: official path or verified status is wrong`);
+  }
+  const cell = (model.configs || []).find(
+    (c) => c.gfx === "gfx950" && c.strategy === "low-latency");
+  if (!cell || !cell.verified) {
+    fail(`${spec.id}: verified gfx950 low-latency cell missing`);
+    continue;
+  }
+  const cmd = cell.launch_python || "";
+  for (const required of [
+    `--model-path ${spec.localPath}`,
+    "--tp 8",
+    "--attention-backend dsv4",
+    "--disable-radix-cache",
+    "--page-size 256",
+    "--mem-fraction-static 0.90",
+    "--swa-full-tokens-ratio 0.1",
+    "--kv-cache-dtype fp8_e4m3",
+    "--chunked-prefill-size 8192",
+    "--max-running-requests 256",
+    "--disable-shared-experts-fusion",
+    "--tool-call-parser deepseekv4",
+    "--reasoning-parser deepseek-v4",
+  ]) {
+    if (!cmd.includes(required)) fail(`${spec.id}: launch command missing ${required}`);
+  }
+  if (cmd.includes("--speculative-algorithm")) {
+    fail(`${spec.id}: unverified DSpark is present in the published launch command`);
+  }
+  const env = Object.fromEntries((cell.env || []).map((item) => [item.key, item.value]));
+  if (env.SGLANG_HACK_FLASHMLA_BACKEND !== "unified_kv_triton" ||
+      env.SGLANG_DSV4_FP4_EXPERTS !== "true") {
+    fail(`${spec.id}: verified attention/MoE environment is missing`);
+  }
+  const rowsByConcurrency = Object.fromEntries(
+    (cell.benchmarks || []).map((row) => [row.concurrency, row]));
+  for (const concurrency of [1, 8, 32]) {
+    const row = rowsByConcurrency[concurrency];
+    if (!row || row.isl !== 8192 || row.osl !== 1024 ||
+        row.total_tok_s !== spec.totals[concurrency]) {
+      fail(`${spec.id}: bad or missing concurrency ${concurrency} benchmark row`);
+    }
+  }
+  if ((cell.benchmarks || []).length !== 3) {
+    fail(`${spec.id}: expected exactly three published benchmark rows`);
+  }
+  if (!(cell.accuracy || []).some(
+      (item) => item.name === "GSM8K" && item.value === spec.accuracy && /invalid=0/.test(item.note))) {
+    fail(`${spec.id}: three-round GSM8K evidence missing`);
+  }
+  const provenance = cell.provenance || {};
+  if (!(provenance.weights || "").includes(spec.revision) ||
+      !(provenance.weights || "").includes(spec.indexSha) ||
+      !/71de97b264/.test(provenance.sglang || "") ||
+      !/d9e5ef7ce/.test(provenance.aiter || "")) {
+    fail(`${spec.id}: pinned checkpoint/runtime provenance missing`);
+  } else {
+    pass(`${spec.id}: official target-only cell, accuracy and 3 benchmark rows`);
+  }
+}
+
 console.log();
 if (failures) {
   console.error(`${failures} check(s) failed`);

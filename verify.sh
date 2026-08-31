@@ -33,6 +33,9 @@ step "offline models.js / glossary / benchmark-row checks" \
 step "GLM-5.3 verification regression tests" \
   python3 -m unittest -q test_glm53_verification.py
 
+step "DeepSeek-V4 launch scripts parse" \
+  bash -n test_dsv4.sh test_dsv4_flash.sh test_dsv4_pro.sh
+
 # Regenerating the rows needs the raw run, which is not in the repo. Skip
 # loudly rather than passing quietly when it is absent.
 GLM53_RAW="${GLM53_RAW:-/results/glm53-final-20260827T233110Z/bench/glm53}"
@@ -43,6 +46,18 @@ else
   echo
   echo "=== glm-5.3-flash rows match the raw records"
   echo "--- SKIPPED: raw records not at $GLM53_RAW (set GLM53_RAW to override)"
+fi
+
+DSV4_RAW="${DSV4_RAW:-/results/dsv4-mi355x-20260831}"
+if [ -d "$DSV4_RAW/flash-0731/perf-final" ] &&
+   [ -d "$DSV4_RAW/pro-0813/perf-final" ]; then
+  step "DeepSeek-V4 rows match the raw records" \
+    python3 gen_dsv4_mi355x_rows.py \
+      --results-root "$DSV4_RAW" --variant both --check-models models.js
+else
+  echo
+  echo "=== DeepSeek-V4 rows match the raw records"
+  echo "--- SKIPPED: raw records not at $DSV4_RAW (set DSV4_RAW to override)"
 fi
 
 if [ "${1:-}" = "--render" ]; then

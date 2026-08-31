@@ -63,6 +63,7 @@
     "--tensor-parallel-size": "Tensor-parallel degree — long form of --tp.",
     "--dtype": "Compute dtype for the unquantized tensors (quantized weights keep their own scheme).",
     "--page-size": "Tokens per KV-cache page — larger pages cut index overhead, waste more on short sequences.",
+    "--swa-full-tokens-ratio": "Fraction of the DeepSeek-V4 cache reserved for full-token SWA state alongside compressed KV state.",
     "--cuda-graph-max-bs-decode": "Largest decode batch size captured into a HIP/CUDA graph.",
     "--max-mamba-cache-size": "Slots in the linear-attention (Mamba/GDN/KDA) state pool — the second, fixed-size memory pool hybrid models need.",
     "--disable-shared-experts-fusion": "Keep MoE shared experts as separate GEMMs instead of fusing them into the routed path.",
@@ -428,7 +429,7 @@
     var rl = cfg.verified ? roofline(model, cfg) : null;
     var unverifiedNote = !cfg.verified
       ? '<div class="block" style="border-top:0;padding-top:20px"><div class="badge gap" style="margin-bottom:8px">not benchmarked</div>' +
-        '<p class="lead" style="margin:0">This config is documented and copy-paste ready, but we have not measured it end-to-end yet — no performance or accuracy numbers are published below.</p></div>'
+        '<p class="lead" style="margin:0">This config is documented and copy-paste ready, but it has not passed this site\'s standard performance and accuracy publication gate — no benchmark rows are published below.</p></div>'
       : "";
 
     var chips =
@@ -573,7 +574,7 @@
     var tag = /\bsglang\s+serve\b/.test(cmd) ? "bash · sglang serve"
       : /launch_server/.test(cmd) ? "python · sglang.launch_server"
       : "bash";
-    return '<div class="block"><h3>Launch command <span class="hint">verified, copy-paste ready</span></h3>' +
+    return '<div class="block"><h3>Launch command <span class="hint">copy-paste recipe</span></h3>' +
       '<div class="cmd" data-cmd><div class="cmd-bar"><span class="tag">' + esc(tag) + "</span>" +
       '<button class="copy-btn" data-copy>Copy</button></div>' +
       "<pre><code>" + tokenizeCmd(cfg.launch_python || "") + "</code></pre></div></div>";
@@ -696,7 +697,8 @@
     if (!p) return "";
     var rows = [];
     function add(k, v) { if (v) rows.push('<div class="row"><dt>' + esc(k) + "</dt><dd>" + esc(v) + "</dd></div>"); }
-    add("image", p.image); add("sglang", p.sglang); add("aiter", p.aiter);
+    add("image", p.image); add("weights", p.weights);
+    add("sglang", p.sglang); add("aiter", p.aiter);
     add("rocm", p.rocm); add("pr", p.pr); add("date", p.date); add("node", p.node);
     if (!rows.length) return "";
     return '<div class="block"><div class="prov"><div class="pe">measured under</div><dl>' + rows.join("") + "</dl></div></div>";

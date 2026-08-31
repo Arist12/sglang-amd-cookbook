@@ -77,6 +77,9 @@ console.log("\n=== deep links ===");
 for (const [hash, wantModel, wantStrat] of [
   ["#m=glm-5.2-fp8", "glm-5.2-fp8", "low-latency"],                       // legacy form
   ["#m=glm-5.3-flash&c=gfx950:high-throughput", "glm-5.3-flash", "high-throughput"],
+  ["#m=glm-5.3&c=gfx950:high-throughput", "glm-5.3", "high-throughput"],
+  ["#m=deepseek-v4-flash-0731&c=gfx950:low-latency", "deepseek-v4-flash-0731", "low-latency"],
+  ["#m=deepseek-v4-pro-0813&c=gfx950:low-latency", "deepseek-v4-pro-0813", "low-latency"],
   ["#m=kimi-k3", "kimi-k3", "low-latency"],                               // model only
   ["#m=kimi-k3&c=gfx950:high-throughput", "kimi-k3", "high-throughput"],  // cell
   ["#m=nope", null, null],                                                // garbage
@@ -91,6 +94,39 @@ for (const [hash, wantModel, wantStrat] of [
     (wantModel ? sel === wantModel : !!sel) &&
     (wantStrat ? chips.indexOf(wantStrat) > -1 : true);
   check(hash + " -> " + sel, ok, "hash now " + window.location.hash);
+}
+
+// ---------------------------------------------------------------- 2b. documented-but-unbenchmarked recipe
+console.log("\n=== documented unbenchmarked recipe ===");
+{
+  const { window, errors } = boot("#m=glm-5.3&c=gfx950:high-throughput");
+  const text = window.document.querySelector("#recipe").textContent;
+  check("full GLM-5.3 renders without runtime errors", errors.length === 0,
+    errors.join(" | ").slice(0, 300));
+  check("full GLM-5.3 keeps the recipe visible", text.includes("zai-org/GLM-5.3"));
+  check("full GLM-5.3 is labeled not benchmarked", /not benchmarked/i.test(text));
+  check("full GLM-5.3 does not claim missing serving validation",
+    !text.includes("we have not measured it end-to-end yet"));
+  check("full GLM-5.3 does not render benchmark rows",
+    window.document.querySelectorAll("#recipe .dtable tbody tr").length === 0);
+}
+
+// ---------------------------------------------------------------- 2c. official DeepSeek-V4 recipes
+console.log("\n=== official DeepSeek-V4 recipes ===");
+for (const [id, path, accuracy] of [
+  ["deepseek-v4-flash-0731", "deepseek-ai/DeepSeek-V4-Flash-0731", "91.964%"],
+  ["deepseek-v4-pro-0813", "deepseek-ai/DeepSeek-V4-Pro-0813", "94.617%"],
+]) {
+  const { window, errors } = boot("#m=" + id + "&c=gfx950:low-latency");
+  const recipe = window.document.querySelector("#recipe");
+  const text = recipe.textContent;
+  check(id + " renders without runtime errors", errors.length === 0,
+    errors.join(" | ").slice(0, 300));
+  check(id + " shows the official checkpoint", text.includes(path));
+  check(id + " shows three benchmark rows",
+    recipe.querySelectorAll(".dtable tbody tr").length === 3);
+  check(id + " shows measured accuracy", text.includes(accuracy));
+  check(id + " exposes the verified backend", text.includes("unified_kv_triton"));
 }
 
 // ---------------------------------------------------------------- 3. every verified cell
